@@ -1,0 +1,5 @@
+import type {CalculationPoint,DerivedMetric} from "./crypto-credit";
+export const MARKET_STRUCTURE_CALCULATION_VERSION="market-structure-derived-v1";
+const day=(date:Date)=>date.toISOString().slice(0,10);
+export function deriveOiMarketCapRatio(oi:readonly CalculationPoint[],marketCap:readonly CalculationPoint[]):DerivedMetric[]{const caps=new Map(marketCap.map(item=>[day(item.observedAt),item]));return oi.flatMap(item=>{const cap=caps.get(day(item.observedAt));return !cap||cap.value<=0?[]:[{code:"BTC_OI_MARKET_CAP_RATIO",calculatedAt:item.observedAt,value:item.value/cap.value,inputObservationIds:[item.id,cap.id]}];});}
+export function deriveOiDrawdown(points:readonly CalculationPoint[]):DerivedMetric[]{const ordered=[...points].sort((a,b)=>a.observedAt.getTime()-b.observedAt.getTime());let high:CalculationPoint|undefined;return ordered.map(item=>{if(!high||item.value>high.value)high=item;return {code:"BTC_OI_DRAWDOWN_FROM_HIGH_PERCENT",calculatedAt:item.observedAt,value:high.value===0?0:(item.value-high.value)/high.value*100,inputObservationIds:high.id===item.id?[item.id]:[item.id,high.id]};});}

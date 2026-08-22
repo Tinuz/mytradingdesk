@@ -1,0 +1,5 @@
+export interface AvailabilityObservation{observedAt:Date;availableAt:Date|null;publishedAt?:Date|null;revisionAt?:Date|null}
+export interface AvailabilityAudit{total:number;proven:number;sameDay:number;late:number;missing:number;published:number;revisions:number;status:"PASSED"|"BLOCKED"|"MISSING"}
+const dayEnd=(value:Date)=>new Date(Date.UTC(value.getUTCFullYear(),value.getUTCMonth(),value.getUTCDate()+1)-1);
+export function wasKnownAt(row:AvailabilityObservation,asOf:Date){return row.observedAt<=asOf&&row.availableAt!==null&&row.availableAt<=asOf}
+export function auditAvailability(rows:readonly AvailabilityObservation[]):AvailabilityAudit{if(!rows.length)return{total:0,proven:0,sameDay:0,late:0,missing:0,published:0,revisions:0,status:"MISSING"};let proven=0,sameDay=0,late=0,missing=0,published=0,revisions=0;for(const row of rows){if(row.publishedAt)published++;if(row.revisionAt)revisions++;if(!row.availableAt){missing++;continue}proven++;if(row.availableAt<=dayEnd(row.observedAt))sameDay++;else late++}return{total:rows.length,proven,sameDay,late,missing,published,revisions,status:missing===0&&late===0?"PASSED":"BLOCKED"}}
