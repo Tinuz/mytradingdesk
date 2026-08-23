@@ -866,6 +866,120 @@ input {
     row-gap: 15px;
   }
 }
+.key-indicator-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.key-indicator-card {
+  background: linear-gradient(145deg, #111b22, #0c141a);
+  border: 1px solid var(--line);
+  padding: 18px;
+  transition: 0.2s;
+}
+.key-indicator-card:hover {
+  border-color: #465762;
+  transform: translateY(-2px);
+}
+.key-indicator-card.missing {
+  opacity: 0.7;
+}
+.key-indicator-card > header,
+.key-indicator-card > footer {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+.key-indicator-card h3 {
+  font-family: Georgia, serif;
+  font-size: 18px;
+  font-weight: 400;
+  margin: 6px 0;
+}
+.key-indicator-card > footer {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.key-indicator-card > footer strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.key-indicator-card > footer span {
+  color: #687681;
+  font-size: 8px;
+}
+.spark-empty {
+  align-items: center;
+  color: #71808b;
+  display: flex;
+  font-size: 8px;
+  height: 70px;
+  justify-content: center;
+}
+.indicator-stack {
+  display: grid;
+  gap: 18px;
+  margin-top: 28px;
+}
+.indicator-chart-head {
+  align-items: start;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.indicator-chart-head h2 {
+  font-family: Georgia, serif;
+  font-size: 25px;
+  font-weight: 400;
+  margin: 7px 0;
+}
+.indicator-method {
+  border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.indicator-method span {
+  color: #687681;
+  display: flex;
+  flex-direction: column;
+  font-size: 8px;
+  text-transform: uppercase;
+}
+.indicator-method strong {
+  color: #aeb8bf;
+  font-size: 9px;
+  margin-top: 5px;
+}
+.indicator-caveat {
+  margin-top: 18px;
+}
+.indicator-caveat p {
+  max-width: 850px;
+}
+@media (max-width: 900px) {
+  .key-indicator-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .key-indicator-grid {
+    grid-template-columns: 1fr;
+  }
+  .indicator-chart-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .indicator-method {
+    grid-template-columns: 1fr;
+  }
+  .indicator-stack .panel {
+    padding: 16px;
+  }
+}
 .asset-interpretation {
   color: #89959f;
   font-size: 11px;

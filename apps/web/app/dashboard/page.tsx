@@ -10,6 +10,7 @@ import {
 import { pretty, score, tone } from "../ui/regime";
 import { Shell } from "../ui/shell";
 import { AssetPriceChart, RegimeTimeline } from "./visuals";
+import { KeyIndicators } from "./key-indicators";
 const direction = (current: number, previous: number | undefined) =>
   previous == null || current === previous
     ? { arrow: "→", label: "STABLE" }
@@ -341,7 +342,7 @@ export default async function DashboardPage() {
         </div>
         <div className="change-list">
           {changes.map((item) => {
-              return (
+            return (
               <div key={item.code}>
                 <span
                   className={
@@ -375,6 +376,7 @@ export default async function DashboardPage() {
           })}
         </div>
       </section>
+      <KeyIndicators />
       <section className="evidence-grid">
         <article className="panel">
           <span className="overline">Why?</span>

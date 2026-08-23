@@ -193,6 +193,21 @@ export interface DashboardHistoryPoint {
   transitioned: boolean;
   assets: { symbol: "BTC" | "ETH" } | null;
 }
+export interface IndicatorSeries {
+  code: string;
+  name: string;
+  category: string;
+  unit: string;
+  expected_frequency: string;
+  stale_after_seconds: number;
+  factor_family: string | null;
+  factor_classification: string | null;
+  classification_status: string | null;
+  canonical_source: string | null;
+  data_contract: Record<string, unknown>;
+  source_type: "CANONICAL" | "DERIVED";
+  points: Array<{ date: string; value: number; quality: string }>;
+}
 async function database() {
   const store = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -393,18 +408,16 @@ export async function saveNotificationPreference(emailEnabled: boolean) {
   if (!client) throw new Error("Database niet geconfigureerd");
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw new Error("Niet geautoriseerd");
-  const { error } = await client
-    .from("notification_preferences")
-    .upsert(
-      {
-        user_id: userData.user.id,
-        in_app_enabled: true,
-        email_enabled: emailEnabled,
-        cooldown_hours: 24,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id" },
-    );
+  const { error } = await client.from("notification_preferences").upsert(
+    {
+      user_id: userData.user.id,
+      in_app_enabled: true,
+      email_enabled: emailEnabled,
+      cooldown_hours: 24,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
   if (error) throw error;
 }
 export async function journalEntries() {
@@ -455,18 +468,16 @@ export async function addJournalEntry(input: {
     .single();
   if (snapshotError || !snapshot)
     throw new Error("Modelsnapshot niet gevonden");
-  const { error } = await client
-    .from("investor_journal_entries")
-    .insert({
-      user_id: userData.user.id,
-      asset_id: snapshot.asset_id,
-      decision_snapshot_id: input.decisionId,
-      entry_type: input.entryType,
-      human_action: input.humanAction,
-      thesis: input.thesis.trim(),
-      invalidating_evidence: input.invalidatingEvidence.trim() || null,
-      review_on: input.reviewOn || null,
-    });
+  const { error } = await client.from("investor_journal_entries").insert({
+    user_id: userData.user.id,
+    asset_id: snapshot.asset_id,
+    decision_snapshot_id: input.decisionId,
+    entry_type: input.entryType,
+    human_action: input.humanAction,
+    thesis: input.thesis.trim(),
+    invalidating_evidence: input.invalidatingEvidence.trim() || null,
+    review_on: input.reviewOn || null,
+  });
   if (error) throw error;
 }
 export async function v1GateAssessment() {
@@ -505,4 +516,66 @@ export async function dashboardHistory() {
     return [];
   }
   return data as unknown as DashboardHistoryPoint[];
+}
+
+export async function indicatorSeries(codes: readonly string[]) {
+  const client = await database();
+  if (!client) return [] as IndicatorSeries[];
+  return Promise.all(
+    codes.map(async (code) => {
+      const { data: indicator, error: indicatorError } = await client
+        .from("indicators")
+        .select(
+          "id,code,name,category,unit,expected_frequency,stale_after_seconds,factor_family,factor_classification,classification_status,canonical_source,data_contract",
+        )
+        .eq("code", code)
+        .maybeSingle();
+      if (indicatorError || !indicator) {
+        if (indicatorError)
+          handleQueryError(`indicator:${code}`, indicatorError);
+        return null;
+      }
+      const [canonical, derived] = await Promise.all([
+        client
+          .from("canonical_observations")
+          .select("observed_at,value,quality_status")
+          .eq("indicator_id", indicator.id)
+          .not("value", "is", null)
+          .order("observed_at")
+          .limit(2000),
+        client
+          .from("indicator_snapshots")
+          .select("calculated_at,raw_value,calculation_version")
+          .eq("indicator_id", indicator.id)
+          .not("raw_value", "is", null)
+          .order("calculated_at")
+          .limit(2000),
+      ]);
+      if (canonical.error || derived.error) {
+        handleQueryError(
+          `indicator-history:${code}`,
+          canonical.error ?? derived.error!,
+        );
+        return null;
+      }
+      const canonicalPoints = (canonical.data ?? []).map((row) => ({
+        date: row.observed_at,
+        value: Number(row.value),
+        quality: row.quality_status,
+      }));
+      const derivedPoints = (derived.data ?? []).map((row) => ({
+        date: row.calculated_at,
+        value: Number(row.raw_value),
+        quality: row.calculation_version,
+      }));
+      const source_type = canonicalPoints.length
+        ? ("CANONICAL" as const)
+        : ("DERIVED" as const);
+      return {
+        ...indicator,
+        source_type,
+        points: source_type === "CANONICAL" ? canonicalPoints : derivedPoints,
+      } as IndicatorSeries;
+    }),
+  ).then((rows) => rows.filter((row): row is IndicatorSeries => row !== null));
 }
