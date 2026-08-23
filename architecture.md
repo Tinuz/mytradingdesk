@@ -49,7 +49,7 @@ Raw and canonical rows have database-level update/delete guards. Provider correc
 
 Phase 2 adds two direct canonical series and one derived observation series. The FRED liquidity adapter derives only a transparent unit-normalized observation from same-date source components; it performs no regime classification. Its raw payload retains every component, series identifier and formula for replay and audit.
 
-Dollar strength follows the same provenance rule without pretending proxy equivalence. `DXY_PROXY_ECB` stores the six ECB reference-rate components, public basket formula, fixing limitation and methodology version in every raw payload. `US_BROAD_DOLLAR_INDEX` stores FRED `DTWEXBGS` separately. A security-invoker validation view compares 30-day percentage direction rather than incompatible index levels. Official `DXY` remains empty and model-inactive.
+Dollar strength follows the same provenance rule without pretending proxy equivalence. `DXY_PROXY_ECB` stores the six ECB reference-rate components, public basket formula, fixing limitation and methodology version in every raw payload. Its 90-day change is active as the capped `DOLLAR_STRENGTH_ECB_90D` hypothesis factor. `US_BROAD_DOLLAR_INDEX` stores FRED `DTWEXBGS` separately and is validation-only; divergence lowers confidence without adding a duplicate score. Official `DXY` remains empty.
 
 ## Phase 3 intelligence
 

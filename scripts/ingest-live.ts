@@ -84,7 +84,10 @@ async function main() {
       JSON.stringify({
         indicator,
         provider: provider.name,
-        mode: "SHADOW_VALIDATION",
+        mode:
+          indicator === "DXY_PROXY_ECB"
+            ? "ACTIVE_HYPOTHESIS"
+            : "VALIDATION_ONLY",
         ...result,
         freshness: await pipeline.evaluateFreshness(indicator, provider.name),
       }),

@@ -20,17 +20,43 @@ const complete = (data ?? []).filter(
   (row) => row.direction_agreement_30d !== null,
 );
 const agreed = complete.filter((row) => row.direction_agreement_30d).length;
+const { data: regime, error: regimeError } = await client
+  .from("regime_snapshots")
+  .select(
+    "calculated_at,regime_state,regime_score,confidence_level,factor_breakdown",
+  )
+  .eq("regime_type", "MACRO_LIQUIDITY")
+  .eq("engine_version", "0.5.1-hypothesis.1")
+  .order("calculated_at", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+if (regimeError) throw regimeError;
+const dollarFactor = (
+  regime?.factor_breakdown as { factors?: Array<{ code: string }> } | null
+)?.factors?.find((factor) => factor.code === "DOLLAR_STRENGTH_ECB_90D");
 console.log(
   JSON.stringify(
     {
-      mode: "SHADOW_VALIDATION",
+      mode: "HYPOTHESIS_VALIDATION",
       officialDxyActivated: false,
       observations: data?.length ?? 0,
       comparable30d: complete.length,
       directionAgreementRate: complete.length ? agreed / complete.length : null,
       latest: data?.[0] ?? null,
-      activationRule:
-        "No automatic activation; requires reviewed thresholds, point-in-time evidence and explicit provider decision.",
+      activeMacroSnapshot: regime
+        ? {
+            calculatedAt: regime.calculated_at,
+            state: regime.regime_state,
+            score: regime.regime_score,
+            confidence: regime.confidence_level,
+            dollarFactor: dollarFactor ?? null,
+            warnings:
+              (regime.factor_breakdown as { warnings?: string[] }).warnings ??
+              [],
+          }
+        : null,
+      promotionRule:
+        "ACTIVE_HYPOTHESIS only; promotion to VALIDATED requires 90 prospective days, point-in-time evidence and reviewed threshold calibration.",
     },
     null,
     2,

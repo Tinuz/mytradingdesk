@@ -6,7 +6,7 @@ The portable ingestion pipeline is implemented, but scheduling is not activated 
 
 Required server secrets are `SUPABASE_SERVICE_ROLE_KEY`, `FRED_API_KEY`, and `TWELVE_DATA_API_KEY`; `COINGECKO_API_KEY` is optional only where the selected plan permits unauthenticated calls. The ECB dollar-proxy feed is keyless. Never expose provider secrets through `NEXT_PUBLIC_` variables.
 
-Dollar strength is collected through two separate shadow series. `DXY_PROXY_ECB` uses one batched ECB SDMX request for USD, JPY, GBP, CAD, SEK and CHF reference rates. `US_BROAD_DOLLAR_INDEX` uses FRED series `DTWEXBGS`. Run `npm run backfill:dollar-strength` for a ten-year backfill and `npm run audit:dollar-strength` to inspect 30-day directional agreement. Official `DXY` remains unavailable and neither shadow series may influence regimes without a reviewed model-version change.
+Dollar strength is collected through two separate series. `DXY_PROXY_ECB` uses one batched ECB SDMX request for USD, JPY, GBP, CAD, SEK and CHF reference rates; its 90-day change is active as the capped `DOLLAR_STRENGTH_ECB_90D` hypothesis in Regime Engine `0.5.1-hypothesis.1`. `US_BROAD_DOLLAR_INDEX` uses FRED `DTWEXBGS` for validation only. Run `npm run backfill:dollar-strength` for a ten-year backfill and `npm run audit:dollar-strength` to inspect directional agreement. Official `DXY` remains unavailable.
 
 ## Phase 2 ingestion
 

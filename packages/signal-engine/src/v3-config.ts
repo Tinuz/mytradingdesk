@@ -1,1 +1,28 @@
-export const V3_REGIME_CONFIG={version:"0.5.0-hypothesis.2",assumptionStatus:"HYPOTHESIS",thresholds:{globalLiquidity90d:[1,3],usLiquidity90d:[1,4],realYield30d:[.15,.5],dxy30d:[1,3],stablecoin30d:[.5,2],stablecoin90d:[1,4],stablecoinAcceleration:[.5,1.5],defiLoans30d:[2,8],btcEtf20d:[500_000_000,2_000_000_000],ethEtf20d:[100_000_000,400_000_000],mvrv:{capitulation:.9,stressed:1.2,elevated:2.5,overheated:3.5},oiMarketCap:{elevated:.025,overheated:.04},oiDrawdown:{stressed:-25,capitulation:-50},realizedLossMarketCap:{stressed:.005,capitulation:.02},asset:{priceVs200Strong:10,slope50Strong:3,drawdownNegative:-20,drawdownStrongNegative:-40,ethBtc30dStrong:5}},minimumFamilies:{macro:2,cryptoCredit:2,marketStructure:2,asset:1}}as const;
+export const V3_REGIME_CONFIG = {
+  version: "0.5.1-hypothesis.1",
+  assumptionStatus: "HYPOTHESIS",
+  thresholds: {
+    globalLiquidity90d: [1, 3],
+    usLiquidity90d: [1, 4],
+    realYield30d: [0.15, 0.5],
+    dollarStrengthEcb90d: 2,
+    stablecoin30d: [0.5, 2],
+    stablecoin90d: [1, 4],
+    stablecoinAcceleration: [0.5, 1.5],
+    defiLoans30d: [2, 8],
+    btcEtf20d: [500_000_000, 2_000_000_000],
+    ethEtf20d: [100_000_000, 400_000_000],
+    mvrv: { capitulation: 0.9, stressed: 1.2, elevated: 2.5, overheated: 3.5 },
+    oiMarketCap: { elevated: 0.025, overheated: 0.04 },
+    oiDrawdown: { stressed: -25, capitulation: -50 },
+    realizedLossMarketCap: { stressed: 0.005, capitulation: 0.02 },
+    asset: {
+      priceVs200Strong: 10,
+      slope50Strong: 3,
+      drawdownNegative: -20,
+      drawdownStrongNegative: -40,
+      ethBtc30dStrong: 5,
+    },
+  },
+  minimumFamilies: { macro: 2, cryptoCredit: 2, marketStructure: 2, asset: 1 },
+} as const;

@@ -1,11 +1,324 @@
-import{createClient}from"@supabase/supabase-js";import{evaluateV3Decision,evaluateV3Regimes,outcomeAt,summarizeValidation,VALIDATION_HORIZONS,V3_ENGINE_INDICATORS,type ValidationPoint,type V3EngineIndicator,type V3EngineObservation,type V3ObservationSeries,type V3TransitionMemory}from"@cmip/signal-engine";
-const required=(name:string)=>{const value=process.env[name];if(!value)throw new Error(`${name} is missing`);return value};const client=createClient(required("NEXT_PUBLIC_SUPABASE_URL"),required("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false,autoRefreshToken:false}});const started=new Date();
-const limitations=["RECONSTRUCTED history: provider backfills were received after their historical observation dates.","Current stored revisions are used where historical vintages are unavailable.","DXY is absent and never imputed.","The common complete factor window is short; incomplete forward horizons remain null.","Results exclude fees, taxes, slippage and portfolio sizing."];
-const{data:run,error:runError}=await client.from("validation_replay_runs").insert({replay_mode:"RECONSTRUCTED",status:"RUNNING",started_at:started.toISOString(),regime_engine_version:"0.5.0-hypothesis.2",decision_engine_version:"0.6.0-hypothesis.1",methodology_version:"reconstructed-daily-v1",limitations}).select("id").single();if(runError)throw new Error(`${runError.code}: ${runError.message}`);
-try{const observations:Partial<Record<V3EngineIndicator,V3EngineObservation[]>>={};const supported=new Set<string>(V3_ENGINE_INDICATORS);
-for(let from=0;;from+=1000){const{data,error}=await client.from("canonical_observations").select("observed_at,value,quality_status,indicators!inner(code)").order("observed_at").range(from,from+999);if(error)throw error;for(const row of data??[]){const code=(row.indicators as unknown as{code:string}).code;if(!supported.has(code)||row.value===null)continue;(observations[code as V3EngineIndicator]??=[]).push({indicator:code as V3EngineIndicator,observedAt:new Date(row.observed_at),value:Number(row.value),quality:row.quality_status})}if(!data||data.length<1000)break}
-for(let from=0;;from+=1000){const{data,error}=await client.from("indicator_snapshots").select("calculated_at,raw_value,indicators!inner(code)").order("calculated_at").range(from,from+999);if(error)throw error;for(const row of data??[]){const code=(row.indicators as unknown as{code:string}).code;if(!supported.has(code)||row.raw_value===null)continue;(observations[code as V3EngineIndicator]??=[]).push({indicator:code as V3EngineIndicator,observedAt:new Date(row.calculated_at),value:Number(row.raw_value),quality:"VALID"})}if(!data||data.length<1000)break}
-for(const rows of Object.values(observations))rows?.sort((a,b)=>a.observedAt.getTime()-b.observedAt.getTime());const daily=(code:"BTC_USD"|"ETH_USD")=>[...new Map((observations[code]??[]).filter(x=>x.quality==="VALID").map(x=>[x.observedAt.toISOString().slice(0,10),{date:x.observedAt.toISOString().slice(0,10),value:x.value}])).values()].sort((a,b)=>a.date.localeCompare(b.date));const prices={BTC:daily("BTC_USD"),ETH:daily("ETH_USD")};const dates=[...new Set([...prices.BTC.map(x=>x.date),...prices.ETH.map(x=>x.date)])].sort();const{data:assets,error:assetError}=await client.from("assets").select("id,symbol").in("symbol",["BTC","ETH"]);if(assetError)throw assetError;const assetIds=new Map((assets??[]).map(x=>[x.symbol,x.id]));const memories:{BTC?:V3TransitionMemory;ETH?:V3TransitionMemory}={};type ReplayRow={evaluation_date:string;asset_id:string;decision_state:string;confidence_level:string;transitioned:boolean;transition_reason:string;risk_override:string;macro_state:string;macro_score:number;crypto_state:string;crypto_score:number;market_structure_state:string;market_structure_score:number;asset_state:string;asset_score:number;price:number;dma_200:number|null;baseline_state:string;forward_returns:Record<string,number|null>;adverse_excursions:Record<string,number|null>;warnings:readonly string[]};const rows:ReplayRow[]=[];const analytics:ValidationPoint[]=[];
-for(const date of dates){const asOf=new Date(`${date}T23:59:59.999Z`);const regimes=evaluateV3Regimes({asOf,observations:observations as V3ObservationSeries});for(const symbol of["BTC","ETH"]as const){const asset=regimes.assets[symbol];const decision=evaluateV3Decision({macroLiquidity:regimes.macroLiquidity,cryptoCreditLiquidity:regimes.cryptoCreditLiquidity,marketStructure:regimes.marketStructure,asset,...(memories[symbol]?{memory:memories[symbol]}:{})});if(decision.status!=="AVAILABLE"||!decision.state||!regimes.macroLiquidity.state||regimes.macroLiquidity.score===null||!regimes.cryptoCreditLiquidity.state||regimes.cryptoCreditLiquidity.score===null||!regimes.marketStructure.state||regimes.marketStructure.score===null||!asset.state||asset.score===null)continue;memories[symbol]=decision.memory;const series=prices[symbol],index=series.findIndex(x=>x.date===date);if(index<0)continue;const prior=series.slice(0,index+1),dma=prior.length>=200?prior.slice(-200).reduce((sum,x)=>sum+x.value,0)/200:null;const forward:Record<string,number|null>={},adverse:Record<string,number|null>={};for(const horizon of VALIDATION_HORIZONS){const outcome=outcomeAt(series,index,horizon);forward[horizon]=outcome.forwardReturn;adverse[horizon]=outcome.adverseExcursion}rows.push({evaluation_date:date,asset_id:assetIds.get(symbol)!,decision_state:decision.state,confidence_level:decision.confidence,transitioned:decision.transitioned,transition_reason:decision.transitionReason,risk_override:decision.riskOverride,macro_state:regimes.macroLiquidity.state,macro_score:regimes.macroLiquidity.score,crypto_state:regimes.cryptoCreditLiquidity.state,crypto_score:regimes.cryptoCreditLiquidity.score,market_structure_state:regimes.marketStructure.state,market_structure_score:regimes.marketStructure.score,asset_state:asset.state,asset_score:asset.score,price:series[index]!.value,dma_200:dma,baseline_state:dma===null?"UNAVAILABLE":series[index]!.value>=dma?"ABOVE_200DMA":"BELOW_200DMA",forward_returns:forward,adverse_excursions:adverse,warnings:decision.explanationFacts.dataWarnings});analytics.push({date,asset:symbol,decision:decision.state,transitioned:decision.transitioned,price:series[index]!.value,forwardReturns:forward,adverseExcursions:adverse})}}
-if(!rows.length)throw new Error("No complete replay decisions could be reconstructed");for(let offset=0;offset<rows.length;offset+=500){const{error}=await client.from("validation_replay_points").insert(rows.slice(offset,offset+500).map(row=>({...row,replay_run_id:run.id})));if(error)throw error}const first=rows[0]!.evaluation_date,last=rows.at(-1)!.evaluation_date;const buyHold:Record<string,number|null>={},dmaBaseline:Record<string,number|null>={},whipsaws:Record<string,number>={};for(const symbol of["BTC","ETH"]as const){const selected=rows.filter(row=>row.asset_id===assetIds.get(symbol));buyHold[symbol]=selected.length>1?(selected.at(-1)!.price/selected[0]!.price-1)*100:null;let equity=1;for(let i=1;i<selected.length;i++)if(selected[i-1]!.baseline_state==="ABOVE_200DMA")equity*=selected[i]!.price/selected[i-1]!.price;dmaBaseline[symbol]=(equity-1)*100;const changed=selected.filter(row=>row.transitioned&&row.transition_reason!=="INITIAL");let count=0;for(let i=2;i<changed.length;i++){const prior=changed[i-2]!,current=changed[i]!;if(prior.decision_state===current.decision_state&&(new Date(current.evaluation_date).getTime()-new Date(prior.evaluation_date).getTime())/86_400_000<=14)count++}whipsaws[symbol]=count}const metrics={...summarizeValidation(analytics),buyHoldReturn:buyHold,dma200BaselineReturn:dmaBaseline,whipsawsWithin14Days:whipsaws,warning:"Descriptive reconstructed evidence; not an investment-performance claim."};const transitions=rows.filter(x=>x.transitioned).length;const{error:finishError}=await client.from("validation_replay_runs").update({status:"SUCCEEDED",completed_at:new Date().toISOString(),from_date:first,to_date:last,evaluated_days:new Set(rows.map(x=>x.evaluation_date)).size,available_decisions:rows.length,transition_count:transitions,metrics}).eq("id",run.id);if(finishError)throw finishError;console.log(JSON.stringify({runId:run.id,mode:"RECONSTRUCTED",from:first,to:last,points:rows.length,transitions,metrics,limitations},null,2));
-}catch(error){const message=error instanceof Error?error.message:"Unknown replay failure";await client.from("validation_replay_runs").update({status:"FAILED",completed_at:new Date().toISOString(),error:message}).eq("id",run.id);throw error}
+import { createClient } from "@supabase/supabase-js";
+import {
+  evaluateV3Decision,
+  evaluateV3Regimes,
+  outcomeAt,
+  summarizeValidation,
+  VALIDATION_HORIZONS,
+  V3_ENGINE_INDICATORS,
+  type ValidationPoint,
+  type V3EngineIndicator,
+  type V3EngineObservation,
+  type V3ObservationSeries,
+  type V3TransitionMemory,
+} from "@cmip/signal-engine";
+const required = (name: string) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is missing`);
+  return value;
+};
+const client = createClient(
+  required("NEXT_PUBLIC_SUPABASE_URL"),
+  required("SUPABASE_SERVICE_ROLE_KEY"),
+  { auth: { persistSession: false, autoRefreshToken: false } },
+);
+const started = new Date();
+const limitations = [
+  "RECONSTRUCTED history: provider backfills were received after their historical observation dates.",
+  "Current stored revisions are used where historical vintages are unavailable.",
+  "Official ICE DXY is absent; the separately named ECB-derived 90-day dollar-strength hypothesis is used from stored observations.",
+  "The common complete factor window is short; incomplete forward horizons remain null.",
+  "Results exclude fees, taxes, slippage and portfolio sizing.",
+];
+const { data: run, error: runError } = await client
+  .from("validation_replay_runs")
+  .insert({
+    replay_mode: "RECONSTRUCTED",
+    status: "RUNNING",
+    started_at: started.toISOString(),
+    regime_engine_version: "0.5.1-hypothesis.1",
+    decision_engine_version: "0.6.1-hypothesis.1",
+    methodology_version: "reconstructed-daily-v1",
+    limitations,
+  })
+  .select("id")
+  .single();
+if (runError) throw new Error(`${runError.code}: ${runError.message}`);
+try {
+  const observations: Partial<
+    Record<V3EngineIndicator, V3EngineObservation[]>
+  > = {};
+  const supported = new Set<string>(V3_ENGINE_INDICATORS);
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await client
+      .from("canonical_observations")
+      .select("observed_at,value,quality_status,indicators!inner(code)")
+      .order("observed_at")
+      .range(from, from + 999);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const code = (row.indicators as unknown as { code: string }).code;
+      if (!supported.has(code) || row.value === null) continue;
+      (observations[code as V3EngineIndicator] ??= []).push({
+        indicator: code as V3EngineIndicator,
+        observedAt: new Date(row.observed_at),
+        value: Number(row.value),
+        quality: row.quality_status,
+      });
+    }
+    if (!data || data.length < 1000) break;
+  }
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await client
+      .from("indicator_snapshots")
+      .select("calculated_at,raw_value,indicators!inner(code)")
+      .order("calculated_at")
+      .range(from, from + 999);
+    if (error) throw error;
+    for (const row of data ?? []) {
+      const code = (row.indicators as unknown as { code: string }).code;
+      if (!supported.has(code) || row.raw_value === null) continue;
+      (observations[code as V3EngineIndicator] ??= []).push({
+        indicator: code as V3EngineIndicator,
+        observedAt: new Date(row.calculated_at),
+        value: Number(row.raw_value),
+        quality: "VALID",
+      });
+    }
+    if (!data || data.length < 1000) break;
+  }
+  for (const rows of Object.values(observations))
+    rows?.sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime());
+  const daily = (code: "BTC_USD" | "ETH_USD") =>
+    [
+      ...new Map(
+        (observations[code] ?? [])
+          .filter((x) => x.quality === "VALID")
+          .map((x) => [
+            x.observedAt.toISOString().slice(0, 10),
+            { date: x.observedAt.toISOString().slice(0, 10), value: x.value },
+          ]),
+      ).values(),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  const prices = { BTC: daily("BTC_USD"), ETH: daily("ETH_USD") };
+  const dates = [
+    ...new Set([
+      ...prices.BTC.map((x) => x.date),
+      ...prices.ETH.map((x) => x.date),
+    ]),
+  ].sort();
+  const { data: assets, error: assetError } = await client
+    .from("assets")
+    .select("id,symbol")
+    .in("symbol", ["BTC", "ETH"]);
+  if (assetError) throw assetError;
+  const assetIds = new Map((assets ?? []).map((x) => [x.symbol, x.id]));
+  const memories: { BTC?: V3TransitionMemory; ETH?: V3TransitionMemory } = {};
+  type ReplayRow = {
+    evaluation_date: string;
+    asset_id: string;
+    decision_state: string;
+    confidence_level: string;
+    transitioned: boolean;
+    transition_reason: string;
+    risk_override: string;
+    macro_state: string;
+    macro_score: number;
+    crypto_state: string;
+    crypto_score: number;
+    market_structure_state: string;
+    market_structure_score: number;
+    asset_state: string;
+    asset_score: number;
+    price: number;
+    dma_200: number | null;
+    baseline_state: string;
+    forward_returns: Record<string, number | null>;
+    adverse_excursions: Record<string, number | null>;
+    warnings: readonly string[];
+  };
+  const rows: ReplayRow[] = [];
+  const analytics: ValidationPoint[] = [];
+  for (const date of dates) {
+    const asOf = new Date(`${date}T23:59:59.999Z`);
+    const regimes = evaluateV3Regimes({
+      asOf,
+      observations: observations as V3ObservationSeries,
+    });
+    for (const symbol of ["BTC", "ETH"] as const) {
+      const asset = regimes.assets[symbol];
+      const decision = evaluateV3Decision({
+        macroLiquidity: regimes.macroLiquidity,
+        cryptoCreditLiquidity: regimes.cryptoCreditLiquidity,
+        marketStructure: regimes.marketStructure,
+        asset,
+        ...(memories[symbol] ? { memory: memories[symbol] } : {}),
+      });
+      if (
+        decision.status !== "AVAILABLE" ||
+        !decision.state ||
+        !regimes.macroLiquidity.state ||
+        regimes.macroLiquidity.score === null ||
+        !regimes.cryptoCreditLiquidity.state ||
+        regimes.cryptoCreditLiquidity.score === null ||
+        !regimes.marketStructure.state ||
+        regimes.marketStructure.score === null ||
+        !asset.state ||
+        asset.score === null
+      )
+        continue;
+      memories[symbol] = decision.memory;
+      const series = prices[symbol],
+        index = series.findIndex((x) => x.date === date);
+      if (index < 0) continue;
+      const prior = series.slice(0, index + 1),
+        dma =
+          prior.length >= 200
+            ? prior.slice(-200).reduce((sum, x) => sum + x.value, 0) / 200
+            : null;
+      const forward: Record<string, number | null> = {},
+        adverse: Record<string, number | null> = {};
+      for (const horizon of VALIDATION_HORIZONS) {
+        const outcome = outcomeAt(series, index, horizon);
+        forward[horizon] = outcome.forwardReturn;
+        adverse[horizon] = outcome.adverseExcursion;
+      }
+      rows.push({
+        evaluation_date: date,
+        asset_id: assetIds.get(symbol)!,
+        decision_state: decision.state,
+        confidence_level: decision.confidence,
+        transitioned: decision.transitioned,
+        transition_reason: decision.transitionReason,
+        risk_override: decision.riskOverride,
+        macro_state: regimes.macroLiquidity.state,
+        macro_score: regimes.macroLiquidity.score,
+        crypto_state: regimes.cryptoCreditLiquidity.state,
+        crypto_score: regimes.cryptoCreditLiquidity.score,
+        market_structure_state: regimes.marketStructure.state,
+        market_structure_score: regimes.marketStructure.score,
+        asset_state: asset.state,
+        asset_score: asset.score,
+        price: series[index]!.value,
+        dma_200: dma,
+        baseline_state:
+          dma === null
+            ? "UNAVAILABLE"
+            : series[index]!.value >= dma
+              ? "ABOVE_200DMA"
+              : "BELOW_200DMA",
+        forward_returns: forward,
+        adverse_excursions: adverse,
+        warnings: decision.explanationFacts.dataWarnings,
+      });
+      analytics.push({
+        date,
+        asset: symbol,
+        decision: decision.state,
+        transitioned: decision.transitioned,
+        price: series[index]!.value,
+        forwardReturns: forward,
+        adverseExcursions: adverse,
+      });
+    }
+  }
+  if (!rows.length)
+    throw new Error("No complete replay decisions could be reconstructed");
+  for (let offset = 0; offset < rows.length; offset += 500) {
+    const { error } = await client
+      .from("validation_replay_points")
+      .insert(
+        rows
+          .slice(offset, offset + 500)
+          .map((row) => ({ ...row, replay_run_id: run.id })),
+      );
+    if (error) throw error;
+  }
+  const first = rows[0]!.evaluation_date,
+    last = rows.at(-1)!.evaluation_date;
+  const buyHold: Record<string, number | null> = {},
+    dmaBaseline: Record<string, number | null> = {},
+    whipsaws: Record<string, number> = {};
+  for (const symbol of ["BTC", "ETH"] as const) {
+    const selected = rows.filter(
+      (row) => row.asset_id === assetIds.get(symbol),
+    );
+    buyHold[symbol] =
+      selected.length > 1
+        ? (selected.at(-1)!.price / selected[0]!.price - 1) * 100
+        : null;
+    let equity = 1;
+    for (let i = 1; i < selected.length; i++)
+      if (selected[i - 1]!.baseline_state === "ABOVE_200DMA")
+        equity *= selected[i]!.price / selected[i - 1]!.price;
+    dmaBaseline[symbol] = (equity - 1) * 100;
+    const changed = selected.filter(
+      (row) => row.transitioned && row.transition_reason !== "INITIAL",
+    );
+    let count = 0;
+    for (let i = 2; i < changed.length; i++) {
+      const prior = changed[i - 2]!,
+        current = changed[i]!;
+      if (
+        prior.decision_state === current.decision_state &&
+        (new Date(current.evaluation_date).getTime() -
+          new Date(prior.evaluation_date).getTime()) /
+          86_400_000 <=
+          14
+      )
+        count++;
+    }
+    whipsaws[symbol] = count;
+  }
+  const metrics = {
+    ...summarizeValidation(analytics),
+    buyHoldReturn: buyHold,
+    dma200BaselineReturn: dmaBaseline,
+    whipsawsWithin14Days: whipsaws,
+    warning:
+      "Descriptive reconstructed evidence; not an investment-performance claim.",
+  };
+  const transitions = rows.filter((x) => x.transitioned).length;
+  const { error: finishError } = await client
+    .from("validation_replay_runs")
+    .update({
+      status: "SUCCEEDED",
+      completed_at: new Date().toISOString(),
+      from_date: first,
+      to_date: last,
+      evaluated_days: new Set(rows.map((x) => x.evaluation_date)).size,
+      available_decisions: rows.length,
+      transition_count: transitions,
+      metrics,
+    })
+    .eq("id", run.id);
+  if (finishError) throw finishError;
+  console.log(
+    JSON.stringify(
+      {
+        runId: run.id,
+        mode: "RECONSTRUCTED",
+        from: first,
+        to: last,
+        points: rows.length,
+        transitions,
+        metrics,
+        limitations,
+      },
+      null,
+      2,
+    ),
+  );
+} catch (error) {
+  const message =
+    error instanceof Error ? error.message : "Unknown replay failure";
+  await client
+    .from("validation_replay_runs")
+    .update({
+      status: "FAILED",
+      completed_at: new Date().toISOString(),
+      error: message,
+    })
+    .eq("id", run.id);
+  throw error;
+}

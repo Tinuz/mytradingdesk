@@ -110,7 +110,7 @@ async function bulkIngest(
         source_observation_id: row.id,
         reconciliation_metadata: {
           status: "NOT_COMPARED",
-          mode: "SHADOW_VALIDATION",
+          mode: "HISTORICAL_BACKFILL",
         },
       }));
     if (canonical.length) {
@@ -151,7 +151,8 @@ for (const [provider, indicator] of [
     JSON.stringify({
       indicator,
       provider: provider.name,
-      mode: "SHADOW_VALIDATION",
+      mode:
+        indicator === "DXY_PROXY_ECB" ? "ACTIVE_HYPOTHESIS" : "VALIDATION_ONLY",
       from: from.toISOString(),
       to: to.toISOString(),
       ...result,

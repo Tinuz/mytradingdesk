@@ -2,7 +2,7 @@
 
 ## V3 migration status
 
-Regime Engine `0.5.0-hypothesis.2`, Decision Engine `0.6.0-hypothesis.1` and Alert Engine `0.7.0-hypothesis.1` are active. Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
+Regime Engine `0.5.1-hypothesis.1`, Decision Engine `0.6.1-hypothesis.1` and Alert Engine `0.7.0-hypothesis.1` are active. Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
 
 ### V3 regime semantics
 
@@ -16,7 +16,7 @@ Current thresholds are explicit hypotheses. Independent factor families are aggr
 
 ### V3 Decision Engine
 
-Decision engine `0.6.0-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance:
+Decision engine `0.6.1-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance:
 
 - `ELEVATED_RISK` and `OVERHEATED` cap `STRONG_ACCUMULATION` at `ACCUMULATION`.
 - `STRESSED` caps otherwise positive accumulation states at `NEUTRAL`.
@@ -37,13 +37,13 @@ WALCL / 1,000
 
 Inputs and units:
 
-| FRED series | Meaning | Source unit | Transformation |
-| --- | --- | --- | --- |
-| `WALCL` | Federal Reserve total assets | USD millions | divide by 1,000 |
-| `ECBASSETSW` | Eurosystem total assets | EUR millions | multiply by USD/EUR, divide by 1,000 |
-| `JPNASSETS` | Bank of Japan total assets | JPY 100 millions | multiply by 0.1, divide by JPY/USD |
-| `DEXUSEU` | USD per EUR | FX rate | converts ECB assets to USD |
-| `DEXJPUS` | JPY per USD | FX rate | converts BoJ assets to USD |
+| FRED series  | Meaning                      | Source unit      | Transformation                       |
+| ------------ | ---------------------------- | ---------------- | ------------------------------------ |
+| `WALCL`      | Federal Reserve total assets | USD millions     | divide by 1,000                      |
+| `ECBASSETSW` | Eurosystem total assets      | EUR millions     | multiply by USD/EUR, divide by 1,000 |
+| `JPNASSETS`  | Bank of Japan total assets   | JPY 100 millions | multiply by 0.1, divide by JPY/USD   |
+| `DEXUSEU`    | USD per EUR                  | FX rate          | converts ECB assets to USD           |
+| `DEXJPUS`    | JPY per USD                  | FX rate          | converts BoJ assets to USD           |
 
 The output is anchored to each `JPNASSETS` observation. For every component the latest observation at or before that anchor is used; values are never interpolated or taken from the future. The raw component rows, formula, alignment rule and methodology version are embedded in every provider payload, allowing exact reconstruction.
 
@@ -84,21 +84,21 @@ Confidence reflects regime availability, factor coverage, warnings, independent 
 
 ## Macro regime
 
-| Factor | Family | Timing hypothesis | Normalization hypothesis |
-| --- | --- | --- | --- |
-| DXY 30-day change | Monetary conditions | Coincident | inverse; ±1% moderate, ±3% strong |
-| US 10Y real-yield 30-day change | Monetary conditions | Coincident | inverse; ±0.15pp moderate, ±0.50pp strong |
-| US net-liquidity 30-day change | Liquidity | Leading | ±1% moderate, ±5% strong |
+| Factor                                    | Family              | Timing hypothesis | Normalization hypothesis                  |
+| ----------------------------------------- | ------------------- | ----------------- | ----------------------------------------- |
+| ECB-derived dollar strength 90-day change | Monetary conditions | Context           | inverse; at ±2% contributes at most ±1    |
+| US 10Y real-yield 30-day change           | Monetary conditions | Coincident        | inverse; ±0.15pp moderate, ±0.50pp strong |
+| US net-liquidity 30-day change            | Liquidity           | Leading           | ±1% moderate, ±5% strong                  |
 
-Missing DXY is excluded from the average, reduces coverage, creates an explicit warning and blocks a strongly supportive/restrictive result. It is never inserted as zero. Macro requires at least two of three valid factors.
+The official ICE DXY remains absent and is never imputed. `DOLLAR_STRENGTH_ECB_90D` is derived from `DXY_PROXY_ECB`: a decline of at least 2% contributes +1, a rise of at least 2% contributes -1, and the range between contributes zero. Missing or stale proxy data is excluded rather than inserted as zero. FRED `US_BROAD_DOLLAR_INDEX` is validation-only; directional divergence adds a warning and lowers confidence. Macro requires at least two independent families.
 
 ## Crypto-liquidity regime
 
-| Factor | Family | Timing hypothesis | Normalization hypothesis |
-| --- | --- | --- | --- |
-| Stablecoin supply 30-day change | Crypto-native liquidity | Leading | ±0.5% moderate, ±2% strong |
-| BTC ETF aggregate flow | Institutional flows | Confirming | 5-day ±$500M; 20-day ±$2B strong thresholds |
-| ETH ETF aggregate flow | Institutional flows | Confirming | 5-day ±$100M; 20-day ±$400M strong thresholds |
+| Factor                          | Family                  | Timing hypothesis | Normalization hypothesis                      |
+| ------------------------------- | ----------------------- | ----------------- | --------------------------------------------- |
+| Stablecoin supply 30-day change | Crypto-native liquidity | Leading           | ±0.5% moderate, ±2% strong                    |
+| BTC ETF aggregate flow          | Institutional flows     | Confirming        | 5-day ±$500M; 20-day ±$2B strong thresholds   |
+| ETH ETF aggregate flow          | Institutional flows     | Confirming        | 5-day ±$100M; 20-day ±$400M strong thresholds |
 
 ETF factors combine 5-day and 20-day windows. One daily flow cannot independently create a major regime transition. At least two of three factor families must be available.
 
@@ -106,11 +106,11 @@ ETF factors combine 5-day and 20-day windows. One daily flow cannot independentl
 
 BTC uses price versus 200DMA, the 20-day direction of its 50DMA and BTC ETF rolling flow. ETH uses the same structure plus the 30-day ETH/BTC trend.
 
-| Factor | Moderate hypothesis | Strong hypothesis |
-| --- | --- | --- |
-| Price versus 200DMA | Above/below long-term average | ±10% distance |
-| 50DMA direction over 20 days | Positive/negative | ±3% |
-| ETH/BTC 30-day trend | Positive/negative | ±5% |
+| Factor                       | Moderate hypothesis           | Strong hypothesis |
+| ---------------------------- | ----------------------------- | ----------------- |
+| Price versus 200DMA          | Above/below long-term average | ±10% distance     |
+| 50DMA direction over 20 days | Positive/negative             | ±3%               |
+| ETH/BTC 30-day trend         | Positive/negative             | ±5%               |
 
 Daily closes are derived deterministically from the last valid observation per UTC day. A minimum 200-day history is mandatory for the long-term factor.
 

@@ -1,11 +1,253 @@
-import type{InvestmentRegime,RegimeScore}from"@cmip/domain";import type{RegimeResult,V3DecisionInput,V3DecisionOutput,V3ExplanationFact,V3FactorResult}from"./types";
-export const V3_DECISION_CONFIG={version:"0.6.0-hypothesis.1",persistenceObservations:2,hysteresis:{STRONG_ACCUMULATION:{enter:5,exit:3},ACCUMULATION:{enter:2,exit:0},NEUTRAL:{enter:0,exit:0},RISK_REDUCTION:{enter:-2,exit:0},DEFENSIVE:{enter:-5,exit:-3}}}as const;
-const scores=[-2,-1,0,1,2]as const;const rank:Record<InvestmentRegime,number>={DEFENSIVE:-2,RISK_REDUCTION:-1,NEUTRAL:0,ACCUMULATION:1,STRONG_ACCUMULATION:2};
-function opportunity(macro:RegimeScore,crypto:RegimeScore,asset:RegimeScore):InvestmentRegime{const total=macro+crypto+asset;if(macro===2&&crypto===2&&asset>=1)return"STRONG_ACCUMULATION";if(macro===-2&&crypto<=-1&&asset<=-1)return"DEFENSIVE";if(total>=2&&macro>=0&&crypto>=0)return"ACCUMULATION";if(total<=-2&&macro<=0&&crypto<=0)return"RISK_REDUCTION";return"NEUTRAL";}
-export function configuredV3Decision(macro:RegimeScore,crypto:RegimeScore,market:RegimeScore,asset:RegimeScore):{state:InvestmentRegime;riskOverride:V3DecisionOutput["riskOverride"]}{const base=opportunity(macro,crypto,asset);if(market===2&&base==="STRONG_ACCUMULATION")return{state:"ACCUMULATION",riskOverride:"OVERHEAT_CAP"};if(market===1&&base==="STRONG_ACCUMULATION")return{state:"ACCUMULATION",riskOverride:"OVERHEAT_CAP"};if(market===-1&&(base==="STRONG_ACCUMULATION"||base==="ACCUMULATION"))return{state:"NEUTRAL",riskOverride:"STRESS_CAP"};if(market===-2&&(base==="STRONG_ACCUMULATION"||base==="ACCUMULATION"))return{state:"NEUTRAL",riskOverride:"CAPITULATION_CAP"};return{state:base,riskOverride:"NONE"};}
-export const V3_DECISION_MATRIX=Object.freeze(Object.fromEntries(scores.flatMap(m=>scores.flatMap(c=>scores.flatMap(ms=>scores.map(a=>{const value=configuredV3Decision(m,c,ms,a);return[`${m}:${c}:${ms}:${a}`,value]as const;}))))));
-function confidence(input:V3DecisionInput):V3DecisionOutput["confidence"]{const regimes=[input.macroLiquidity,input.cryptoCreditLiquidity,input.marketStructure,input.asset];if(input.dataQualityIssues?.some(x=>x.severity==="CRITICAL")||regimes.some(x=>x.status!=="AVAILABLE"||x.coverage<.67))return"LOW";const warningCount=regimes.reduce((sum,x)=>sum+x.warnings.length,0)+(input.dataQualityIssues?.length??0);return warningCount===0&&regimes.every(x=>x.coverage===1)?"HIGH":"MEDIUM";}
-function facts(regime:V3ExplanationFact["regime"],result:RegimeResult<string,V3FactorResult>):V3ExplanationFact[]{return result.factors.filter((x):x is V3FactorResult&{score:RegimeScore}=>x.status==="VALID"&&x.score!==null&&x.score!==0).map(x=>({code:x.code,regime,score:x.score,description:x.description}));}
-function explain(input:V3DecisionInput){const macro=facts("MACRO_LIQUIDITY",input.macroLiquidity),crypto=facts("CRYPTO_CREDIT_LIQUIDITY",input.cryptoCreditLiquidity),market=facts("MARKET_STRUCTURE",input.marketStructure),asset=facts("ASSET",input.asset);const opportunityFacts=[...macro,...crypto,...asset],direction=Math.sign(opportunityFacts.reduce((sum,x)=>sum+x.score,0));return{positiveDrivers:opportunityFacts.filter(x=>x.score>0),negativeDrivers:opportunityFacts.filter(x=>x.score<0),riskDrivers:market,contradictorySignals:direction===0?opportunityFacts:opportunityFacts.filter(x=>Math.sign(x.score)!==direction),dataWarnings:[...input.macroLiquidity.warnings,...input.cryptoCreditLiquidity.warnings,...input.marketStructure.warnings,...input.asset.warnings,...(input.dataQualityIssues??[]).map(x=>`${x.severity}:${x.code}`)]};}
-function hysteresis(current:InvestmentRegime,candidate:InvestmentRegime,total:number){if(current===candidate)return false;if(rank[candidate]>rank[current]){if(candidate==="STRONG_ACCUMULATION")return total>=5;if(candidate==="ACCUMULATION")return total>=2;return total>=V3_DECISION_CONFIG.hysteresis[current].exit;}if(candidate==="DEFENSIVE")return total<=-5;if(candidate==="RISK_REDUCTION")return total<=-2;return total<=V3_DECISION_CONFIG.hysteresis[current].exit;}
-export function evaluateV3Decision(input:V3DecisionInput):V3DecisionOutput{const previous=input.memory?.currentState??null;const base={previousState:previous,confidence:confidence(input),explanationFacts:explain(input),engineVersion:V3_DECISION_CONFIG.version};const regimes=[input.macroLiquidity,input.cryptoCreditLiquidity,input.marketStructure,input.asset];if(regimes.some(x=>x.status!=="AVAILABLE"||x.score===null))return{...base,state:previous,candidateState:null,status:"INSUFFICIENT_DATA",transitioned:false,transitionReason:"INSUFFICIENT_DATA",riskOverride:"NONE",memory:input.memory??{currentState:null,pendingState:null,consecutiveObservations:0}};const macro=input.macroLiquidity.score!,crypto=input.cryptoCreditLiquidity.score!,market=input.marketStructure.score!,asset=input.asset.score!,total=macro+crypto+asset;const configured=V3_DECISION_MATRIX[`${macro}:${crypto}:${market}:${asset}`]!;const candidate=configured.state;if(previous===null)return{...base,state:candidate,candidateState:candidate,status:"AVAILABLE",transitioned:true,transitionReason:"INITIAL",riskOverride:configured.riskOverride,memory:{currentState:candidate,pendingState:null,consecutiveObservations:0}};if(candidate===previous||!hysteresis(previous,candidate,total))return{...base,state:previous,candidateState:candidate,status:"AVAILABLE",transitioned:false,transitionReason:"HYSTERESIS_HELD",riskOverride:configured.riskOverride,memory:{currentState:previous,pendingState:null,consecutiveObservations:0}};const count=input.memory?.pendingState===candidate?input.memory.consecutiveObservations+1:1;if(count<2)return{...base,state:previous,candidateState:candidate,status:"AVAILABLE",transitioned:false,transitionReason:"PENDING_CONFIRMATION",riskOverride:configured.riskOverride,memory:{currentState:previous,pendingState:candidate,consecutiveObservations:count}};return{...base,state:candidate,candidateState:candidate,status:"AVAILABLE",transitioned:true,transitionReason:"PERSISTENCE_CONFIRMED",riskOverride:configured.riskOverride,memory:{currentState:candidate,pendingState:null,consecutiveObservations:0}};}
+import type { InvestmentRegime, RegimeScore } from "@cmip/domain";
+import type {
+  RegimeResult,
+  V3DecisionInput,
+  V3DecisionOutput,
+  V3ExplanationFact,
+  V3FactorResult,
+} from "./types";
+export const V3_DECISION_CONFIG = {
+  version: "0.6.1-hypothesis.1",
+  persistenceObservations: 2,
+  hysteresis: {
+    STRONG_ACCUMULATION: { enter: 5, exit: 3 },
+    ACCUMULATION: { enter: 2, exit: 0 },
+    NEUTRAL: { enter: 0, exit: 0 },
+    RISK_REDUCTION: { enter: -2, exit: 0 },
+    DEFENSIVE: { enter: -5, exit: -3 },
+  },
+} as const;
+const scores = [-2, -1, 0, 1, 2] as const;
+const rank: Record<InvestmentRegime, number> = {
+  DEFENSIVE: -2,
+  RISK_REDUCTION: -1,
+  NEUTRAL: 0,
+  ACCUMULATION: 1,
+  STRONG_ACCUMULATION: 2,
+};
+function opportunity(
+  macro: RegimeScore,
+  crypto: RegimeScore,
+  asset: RegimeScore,
+): InvestmentRegime {
+  const total = macro + crypto + asset;
+  if (macro === 2 && crypto === 2 && asset >= 1) return "STRONG_ACCUMULATION";
+  if (macro === -2 && crypto <= -1 && asset <= -1) return "DEFENSIVE";
+  if (total >= 2 && macro >= 0 && crypto >= 0) return "ACCUMULATION";
+  if (total <= -2 && macro <= 0 && crypto <= 0) return "RISK_REDUCTION";
+  return "NEUTRAL";
+}
+export function configuredV3Decision(
+  macro: RegimeScore,
+  crypto: RegimeScore,
+  market: RegimeScore,
+  asset: RegimeScore,
+): { state: InvestmentRegime; riskOverride: V3DecisionOutput["riskOverride"] } {
+  const base = opportunity(macro, crypto, asset);
+  if (market === 2 && base === "STRONG_ACCUMULATION")
+    return { state: "ACCUMULATION", riskOverride: "OVERHEAT_CAP" };
+  if (market === 1 && base === "STRONG_ACCUMULATION")
+    return { state: "ACCUMULATION", riskOverride: "OVERHEAT_CAP" };
+  if (
+    market === -1 &&
+    (base === "STRONG_ACCUMULATION" || base === "ACCUMULATION")
+  )
+    return { state: "NEUTRAL", riskOverride: "STRESS_CAP" };
+  if (
+    market === -2 &&
+    (base === "STRONG_ACCUMULATION" || base === "ACCUMULATION")
+  )
+    return { state: "NEUTRAL", riskOverride: "CAPITULATION_CAP" };
+  return { state: base, riskOverride: "NONE" };
+}
+export const V3_DECISION_MATRIX = Object.freeze(
+  Object.fromEntries(
+    scores.flatMap((m) =>
+      scores.flatMap((c) =>
+        scores.flatMap((ms) =>
+          scores.map((a) => {
+            const value = configuredV3Decision(m, c, ms, a);
+            return [`${m}:${c}:${ms}:${a}`, value] as const;
+          }),
+        ),
+      ),
+    ),
+  ),
+);
+function confidence(input: V3DecisionInput): V3DecisionOutput["confidence"] {
+  const regimes = [
+    input.macroLiquidity,
+    input.cryptoCreditLiquidity,
+    input.marketStructure,
+    input.asset,
+  ];
+  if (
+    input.dataQualityIssues?.some((x) => x.severity === "CRITICAL") ||
+    regimes.some((x) => x.status !== "AVAILABLE" || x.coverage < 0.67)
+  )
+    return "LOW";
+  const warningCount =
+    regimes.reduce((sum, x) => sum + x.warnings.length, 0) +
+    (input.dataQualityIssues?.length ?? 0);
+  return warningCount === 0 && regimes.every((x) => x.coverage === 1)
+    ? "HIGH"
+    : "MEDIUM";
+}
+function facts(
+  regime: V3ExplanationFact["regime"],
+  result: RegimeResult<string, V3FactorResult>,
+): V3ExplanationFact[] {
+  return result.factors
+    .filter(
+      (x): x is V3FactorResult & { score: RegimeScore } =>
+        x.status === "VALID" && x.score !== null && x.score !== 0,
+    )
+    .map((x) => ({
+      code: x.code,
+      regime,
+      score: x.score,
+      description: x.description,
+    }));
+}
+function explain(input: V3DecisionInput) {
+  const macro = facts("MACRO_LIQUIDITY", input.macroLiquidity),
+    crypto = facts("CRYPTO_CREDIT_LIQUIDITY", input.cryptoCreditLiquidity),
+    market = facts("MARKET_STRUCTURE", input.marketStructure),
+    asset = facts("ASSET", input.asset);
+  const opportunityFacts = [...macro, ...crypto, ...asset],
+    direction = Math.sign(
+      opportunityFacts.reduce((sum, x) => sum + x.score, 0),
+    );
+  return {
+    positiveDrivers: opportunityFacts.filter((x) => x.score > 0),
+    negativeDrivers: opportunityFacts.filter((x) => x.score < 0),
+    riskDrivers: market,
+    contradictorySignals:
+      direction === 0
+        ? opportunityFacts
+        : opportunityFacts.filter((x) => Math.sign(x.score) !== direction),
+    dataWarnings: [
+      ...input.macroLiquidity.warnings,
+      ...input.cryptoCreditLiquidity.warnings,
+      ...input.marketStructure.warnings,
+      ...input.asset.warnings,
+      ...(input.dataQualityIssues ?? []).map((x) => `${x.severity}:${x.code}`),
+    ],
+  };
+}
+function hysteresis(
+  current: InvestmentRegime,
+  candidate: InvestmentRegime,
+  total: number,
+) {
+  if (current === candidate) return false;
+  if (rank[candidate] > rank[current]) {
+    if (candidate === "STRONG_ACCUMULATION") return total >= 5;
+    if (candidate === "ACCUMULATION") return total >= 2;
+    return total >= V3_DECISION_CONFIG.hysteresis[current].exit;
+  }
+  if (candidate === "DEFENSIVE") return total <= -5;
+  if (candidate === "RISK_REDUCTION") return total <= -2;
+  return total <= V3_DECISION_CONFIG.hysteresis[current].exit;
+}
+export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
+  const previous = input.memory?.currentState ?? null;
+  const base = {
+    previousState: previous,
+    confidence: confidence(input),
+    explanationFacts: explain(input),
+    engineVersion: V3_DECISION_CONFIG.version,
+  };
+  const regimes = [
+    input.macroLiquidity,
+    input.cryptoCreditLiquidity,
+    input.marketStructure,
+    input.asset,
+  ];
+  if (regimes.some((x) => x.status !== "AVAILABLE" || x.score === null))
+    return {
+      ...base,
+      state: previous,
+      candidateState: null,
+      status: "INSUFFICIENT_DATA",
+      transitioned: false,
+      transitionReason: "INSUFFICIENT_DATA",
+      riskOverride: "NONE",
+      memory: input.memory ?? {
+        currentState: null,
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    };
+  const macro = input.macroLiquidity.score!,
+    crypto = input.cryptoCreditLiquidity.score!,
+    market = input.marketStructure.score!,
+    asset = input.asset.score!,
+    total = macro + crypto + asset;
+  const configured =
+    V3_DECISION_MATRIX[`${macro}:${crypto}:${market}:${asset}`]!;
+  const candidate = configured.state;
+  if (previous === null)
+    return {
+      ...base,
+      state: candidate,
+      candidateState: candidate,
+      status: "AVAILABLE",
+      transitioned: true,
+      transitionReason: "INITIAL",
+      riskOverride: configured.riskOverride,
+      memory: {
+        currentState: candidate,
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    };
+  if (candidate === previous || !hysteresis(previous, candidate, total))
+    return {
+      ...base,
+      state: previous,
+      candidateState: candidate,
+      status: "AVAILABLE",
+      transitioned: false,
+      transitionReason: "HYSTERESIS_HELD",
+      riskOverride: configured.riskOverride,
+      memory: {
+        currentState: previous,
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    };
+  const count =
+    input.memory?.pendingState === candidate
+      ? input.memory.consecutiveObservations + 1
+      : 1;
+  if (count < 2)
+    return {
+      ...base,
+      state: previous,
+      candidateState: candidate,
+      status: "AVAILABLE",
+      transitioned: false,
+      transitionReason: "PENDING_CONFIRMATION",
+      riskOverride: configured.riskOverride,
+      memory: {
+        currentState: previous,
+        pendingState: candidate,
+        consecutiveObservations: count,
+      },
+    };
+  return {
+    ...base,
+    state: candidate,
+    candidateState: candidate,
+    status: "AVAILABLE",
+    transitioned: true,
+    transitionReason: "PERSISTENCE_CONFIRMED",
+    riskOverride: configured.riskOverride,
+    memory: {
+      currentState: candidate,
+      pendingState: null,
+      consecutiveObservations: 0,
+    },
+  };
+}

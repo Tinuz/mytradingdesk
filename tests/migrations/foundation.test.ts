@@ -82,6 +82,12 @@ const dollarValidationMigration = readFileSync(
   resolve("supabase/migrations/202608230020_dollar_strength_validation.sql"),
   "utf8",
 );
+const dollarActivationMigration = readFileSync(
+  resolve(
+    "supabase/migrations/202608230021_activate_ecb_dollar_hypothesis.sql",
+  ),
+  "utf8",
+);
 const requiredTables = [
   "assets",
   "providers",
@@ -277,6 +283,21 @@ describe("Dollar-strength shadow validation", () => {
   it("compares thirty-day direction without mixing index levels", () => {
     expect(dollarValidationMigration).toContain("proxy_change_30d_percent");
     expect(dollarValidationMigration).toContain("direction_agreement_30d");
+  });
+});
+
+describe("ECB dollar-strength hypothesis activation", () => {
+  it("activates a separately named capped factor, not official DXY", () => {
+    expect(dollarActivationMigration).toContain(
+      '"regimeFactor":"DOLLAR_STRENGTH_ECB_90D"',
+    );
+    expect(dollarActivationMigration).toContain('"maximumAbsoluteScore":1');
+    expect(dollarActivationMigration).toContain('"officialDxy":false');
+  });
+  it("versions both regime and decision behavior", () => {
+    expect(dollarActivationMigration).toContain("0.5.1-hypothesis.1");
+    expect(dollarActivationMigration).toContain("0.6.1-hypothesis.1");
+    expect(dollarActivationMigration).toContain("divergenceLowersConfidence");
   });
 });
 
