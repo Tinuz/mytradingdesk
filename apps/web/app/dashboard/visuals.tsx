@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import type { DashboardHistoryPoint } from "../../lib/data";
+import { InfoTip } from "../ui/info-tip";
 const tone = (score: number) =>
   score > 0 ? "positive" : score < 0 ? "negative" : "neutral";
 const short = (date: string) =>
@@ -50,7 +51,20 @@ export function RegimeTimeline({
       <div className="panel-head">
         <div>
           <span className="overline">Where did we come from?</span>
-          <h2>Market Regime Timeline</h2>
+          <h2 className="metric-label">
+            Market Regime Timeline
+            <InfoTip
+              label="Market Regime Timeline"
+              title="Historische modeltoestanden"
+              watchFor={[
+                "Zoek langdurige bevestiging of divergentie tussen de rijen.",
+                "De historie is gereconstrueerd en niet volledig point-in-time.",
+              ]}
+            >
+              Iedere gekleurde cel is de dagelijkse ordinale toestand van één
+              modellaag. Groen is ondersteunend, amber neutraal en rood risico.
+            </InfoTip>
+          </h2>
         </div>
         <div className="range-switch" aria-label="Tijdsperiode">
           {(["3M", "6M", "1Y", "2Y", "MAX"] as const).map((value) => (

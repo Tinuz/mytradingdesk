@@ -8,6 +8,7 @@ import {
   type Factor,
 } from "../../lib/data";
 import { pretty, score, tone } from "../ui/regime";
+import { InfoTip } from "../ui/info-tip";
 import { Shell } from "../ui/shell";
 import { AssetPriceChart, RegimeTimeline } from "./visuals";
 import { KeyIndicators } from "./key-indicators";
@@ -62,18 +63,23 @@ function EnvironmentCard({
   state,
   value,
   previous,
+  help,
 }: {
   index: string;
   label: string;
   state: string;
   value: number;
   previous?: number | undefined;
+  help: { title: string; description: string; watchFor: readonly string[] };
 }) {
   const move = direction(value, previous);
   return (
     <article className={`environment-card ${tone(value)}`}>
-      <span className="micro-label">
+      <span className="micro-label metric-label">
         {index} / {label}
+        <InfoTip label={label} title={help.title} watchFor={help.watchFor}>
+          {help.description}
+        </InfoTip>
       </span>
       <strong>{pretty(state)}</strong>
       <div
@@ -228,7 +234,21 @@ export default async function DashboardPage() {
           <span className="overline">
             Market environment / shadow intelligence
           </span>
-          <h1>{overall(reference)}</h1>
+          <span className="title-with-info">
+            <h1>{overall(reference)}</h1>
+            <InfoTip
+              label="Market Environment"
+              title="Samenvatting van het marktklimaat"
+              watchFor={[
+                "Kijk of macro, crypto-credit en marktstructuur elkaar bevestigen.",
+                "MIXED betekent onzekerheid, niet automatisch verkopen.",
+              ]}
+            >
+              Combineert de drie brede modelagen. CONSTRUCTIVE, MIXED en
+              DEFENSIVE zijn ordinale toestanden, geen kansen of
+              koersvoorspellingen.
+            </InfoTip>
+          </span>
           <p>
             {reference.macro_score > 0 && reference.crypto_score > 0
               ? "Macro- en crypto-liquiditeit bevestigen elkaar."
@@ -239,7 +259,21 @@ export default async function DashboardPage() {
         <div className="environment-direction">
           <span>{overallMove.arrow}</span>
           <div>
-            <small>Direction</small>
+            <small className="metric-label">
+              Direction
+              <InfoTip
+                label="Direction"
+                title="Verandering sinds de vorige snapshot"
+                align="right"
+                watchFor={[
+                  "Zoek bevestiging in meerdere opeenvolgende snapshots.",
+                  "STABLE betekent onveranderd model, niet lage volatiliteit.",
+                ]}
+              >
+                Vergelijkt de samengestelde score met de vorige live snapshot;
+                dit voorspelt niet de grootte of duur van een prijsbeweging.
+              </InfoTip>
+            </small>
             <strong>{overallMove.label}</strong>
             <time>
               Updated{" "}
@@ -255,11 +289,22 @@ export default async function DashboardPage() {
         <section
           className={`trust-banner ${trust.decision_freshness.toLowerCase()}`}
         >
-          <strong>
+          <strong className="metric-label">
             DATA{" "}
             {trust.decision_freshness === "CURRENT" && unhealthy.length === 0
               ? "HEALTHY"
               : "DEGRADED"}
+            <InfoTip
+              label="Data quality"
+              title="Betrouwbaarheid van de invoer"
+              watchFor={[
+                "Controleer stale en ontbrekende bronnen vóór een beslissing.",
+                "DEGRADED verlaagt vertrouwen; het is niet bearish op zichzelf.",
+              ]}
+            >
+              Toont hoeveel vereiste indicatoren vers, vertraagd of ontbrekend
+              zijn en of de modelsnapshot actueel is.
+            </InfoTip>
           </strong>
           <span>
             {trust.fresh_indicators}/
@@ -282,6 +327,15 @@ export default async function DashboardPage() {
           state={reference.macro_state}
           value={reference.macro_score}
           previous={previous?.macro_score}
+          help={{
+            title: "Externe liquiditeitsomgeving",
+            description:
+              "Meet via macroproxies of mondiale financieringscondities verruimen of verkrappen.",
+            watchFor: [
+              "Volg brede bevestiging over meerdere maanden.",
+              "Een positieve score garandeert geen directe cryptostijging.",
+            ],
+          }}
         />
         <EnvironmentCard
           index="02"
@@ -289,6 +343,15 @@ export default async function DashboardPage() {
           state={reference.crypto_state}
           value={reference.crypto_score}
           previous={previous?.crypto_score}
+          help={{
+            title: "Crypto-native krediet en kapitaal",
+            description:
+              "Vat stablecoin-groei, DeFi-krediet en ETF-stromen samen als maat voor beschikbaar cryptokapitaal.",
+            watchFor: [
+              "Let op versnelling én bevestiging tussen reeksen.",
+              "Kredietgroei kan ook speculatieve leverage voeden.",
+            ],
+          }}
         />
         <EnvironmentCard
           index="03"
@@ -296,11 +359,34 @@ export default async function DashboardPage() {
           state={reference.market_structure_state}
           value={reference.market_structure_score}
           previous={previous?.market_structure_score}
+          help={{
+            title: "Interne gezondheid van de markt",
+            description:
+              "Combineert waardering, leverage, deleveraging en gerealiseerde verliezen tot een structurele risicostaat.",
+            watchFor: [
+              "Leverage plus verliezen is kwetsbaarder dan één signaal.",
+              "Dit is een risicolaag, geen richtingvoorspeller.",
+            ],
+          }}
         />
         <article
           className={`environment-card ${unhealthy.length ? "negative" : "positive"}`}
         >
-          <span className="micro-label">04 / Data integrity</span>
+          <span className="micro-label metric-label">
+            04 / Data integrity
+            <InfoTip
+              label="Data integrity"
+              title="Dekking en actualiteit"
+              align="right"
+              watchFor={[
+                "Open bronnen bij stale of missing data.",
+                "Onvolledige data kan confidence en beslissingen vertekenen.",
+              ]}
+            >
+              Het aandeel kernindicatoren dat binnen de verwachte
+              verversingsfrequentie beschikbaar is.
+            </InfoTip>
+          </span>
           <strong>{unhealthy.length ? "DEGRADED" : "HEALTHY"}</strong>
           <div className="integrity-count">
             <b>
@@ -318,7 +404,20 @@ export default async function DashboardPage() {
       <div className="section-title">
         <div>
           <span className="overline">BTC / ETH</span>
-          <h2>Asset regimes</h2>
+          <h2 className="metric-label">
+            Asset regimes
+            <InfoTip
+              label="Asset regimes"
+              title="Beslisstaat per asset"
+              watchFor={[
+                "Controleer welke van de vier lagen de uitkomst draagt.",
+                "Confidence is overeenstemming, geen kanspercentage.",
+              ]}
+            >
+              Combineert macro, crypto-credit, marktstructuur en assetspecifieke
+              signalen. Hysterese voorkomt omslaan bij kleine bewegingen.
+            </InfoTip>
+          </h2>
         </div>
         <p>Prijs is uitkomst; de vier modelagen blijven zichtbaar.</p>
       </div>
@@ -336,7 +435,20 @@ export default async function DashboardPage() {
         <div className="panel-head">
           <div>
             <span className="overline">What changed?</span>
-            <h2>Beweging vóór niveau</h2>
+            <h2 className="metric-label">
+              Beweging vóór niveau
+              <InfoTip
+                label="What changed"
+                title="Verandering in modelbijdragen"
+                watchFor={[
+                  "Geef meer gewicht aan meerdere onafhankelijke veranderingen.",
+                  "Een pijl toont modelrichting, niet de volgende koersbeweging.",
+                ]}
+              >
+                Vergelijkt iedere factorscore met de vorige live snapshot en
+                maakt een draai zichtbaar voordat het totaallabel verandert.
+              </InfoTip>
+            </h2>
           </div>
           <span>vs. vorige live snapshot</span>
         </div>
@@ -380,7 +492,20 @@ export default async function DashboardPage() {
       <section className="evidence-grid">
         <article className="panel">
           <span className="overline">Why?</span>
-          <h2>Bevestiging en tegensignalen</h2>
+          <h2 className="metric-label">
+            Bevestiging en tegensignalen
+            <InfoTip
+              label="Supportive en risk"
+              title="Waarom het model tot deze staat komt"
+              watchFor={[
+                "Scores zijn ordinale bijdragen, geen percentages.",
+                "Tegensignalen blijven relevant bij een positieve eindstaat.",
+              ]}
+            >
+              Supportive toont positieve modelbijdragen; Risk toont negatieve.
+              Zo worden consensus en interne tegenstrijdigheid zichtbaar.
+            </InfoTip>
+          </h2>
           <div className="driver-columns">
             <div>
               <h3>Supportive</h3>
