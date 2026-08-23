@@ -3,8 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "npm@11.8.0",
-  "engines": { "node": ">=20.9.0" },
-  "workspaces": ["apps/*", "packages/*"],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "npm run dev --workspace=@cmip/web",
     "build": "npm run build --workspaces --if-present",
@@ -16,11 +21,14 @@
     "test:migrations": "vitest run tests/migrations",
     "smoke:providers": "vite-node tests/smoke/coingecko.ts",
     "smoke:global-liquidity": "vite-node tests/smoke/global-liquidity.ts",
+    "smoke:dollar-strength": "vite-node tests/smoke/dollar-strength.ts",
     "ingest:live": "vite-node scripts/ingest-live.ts",
     "ingest:v3-live": "vite-node scripts/ingest-v3-live.ts",
     "derive:v3": "vite-node scripts/derive-v3-indicators.ts",
     "backfill:phase2": "vite-node scripts/backfill-phase2.ts",
     "backfill:phase3": "vite-node scripts/backfill-phase3.ts",
+    "backfill:dollar-strength": "vite-node scripts/backfill-dollar-strength.ts",
+    "audit:dollar-strength": "vite-node scripts/audit-dollar-strength.ts",
     "backfill:crypto-credit": "vite-node scripts/backfill-crypto-credit.ts",
     "audit:crypto-credit": "vite-node scripts/audit-crypto-credit.ts",
     "backfill:market-structure": "vite-node scripts/backfill-market-structure.ts",

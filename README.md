@@ -4,7 +4,7 @@ An explainable, deterministic macro and crypto regime detection system for disci
 
 ## Current status
 
-The v3 analytical pipeline is active across four independent layers. Decision Engine `0.6.0-hypothesis.1` produces explainable BTC and ETH decisions. Alert Engine `0.7.0-hypothesis.1` turns only new live material changes into deduplicated in-app notifications and optional email. Exact DXY/NYICDX remains an explicit backlog exception.
+The v3 analytical pipeline is active across four independent layers. Decision Engine `0.6.0-hypothesis.1` produces explainable BTC and ETH decisions. Alert Engine `0.7.0-hypothesis.1` turns only new live material changes into deduplicated in-app notifications and optional email. Exact DXY/NYICDX remains an explicit backlog exception; a keyless ECB-derived proxy and FRED broad-dollar series now collect separate shadow-validation evidence without influencing regimes.
 
 ## Requirements
 
@@ -44,7 +44,7 @@ npm run smoke:providers
 supabase db reset
 ```
 
-The automated suite covers malformed/missing units and values, extreme changes, staleness, duplicates, discrepancies, explicit fallback behavior, provider failure, missing intervals and backfill recovery. The live smoke command retrieves recent BTC, ETH and real-yield observations plus Twelve Data fallback data without persisting them. DXY stays explicitly unavailable until licensed ICE access or another exact approved source is configured.
+The automated suite covers malformed/missing units and values, extreme changes, staleness, duplicates, discrepancies, explicit fallback behavior, provider failure, missing intervals and backfill recovery. The live smoke command retrieves recent BTC, ETH and real-yield observations plus Twelve Data fallback data without persisting them. DXY stays explicitly unavailable until licensed ICE access or another exact approved source is configured; shadow dollar-strength observations remain separately named and auditable.
 
 ## Workspace
 

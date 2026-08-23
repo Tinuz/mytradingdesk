@@ -4,7 +4,9 @@
 
 The portable ingestion pipeline is implemented, but scheduling is not activated without provider credentials and a migrated Supabase project. Intended cadence is BTC/ETH every 15 minutes, DXY hourly, and DFII10 daily after publication. Each invocation is independently executable, idempotent and records provider failures rather than manufacturing data.
 
-Required server secrets are `SUPABASE_SERVICE_ROLE_KEY`, `FRED_API_KEY`, and `TWELVE_DATA_API_KEY`; `COINGECKO_API_KEY` is optional only where the selected plan permits unauthenticated calls. Never expose these through `NEXT_PUBLIC_` variables.
+Required server secrets are `SUPABASE_SERVICE_ROLE_KEY`, `FRED_API_KEY`, and `TWELVE_DATA_API_KEY`; `COINGECKO_API_KEY` is optional only where the selected plan permits unauthenticated calls. The ECB dollar-proxy feed is keyless. Never expose provider secrets through `NEXT_PUBLIC_` variables.
+
+Dollar strength is collected through two separate shadow series. `DXY_PROXY_ECB` uses one batched ECB SDMX request for USD, JPY, GBP, CAD, SEK and CHF reference rates. `US_BROAD_DOLLAR_INDEX` uses FRED series `DTWEXBGS`. Run `npm run backfill:dollar-strength` for a ten-year backfill and `npm run audit:dollar-strength` to inspect 30-day directional agreement. Official `DXY` remains unavailable and neither shadow series may influence regimes without a reviewed model-version change.
 
 ## Phase 2 ingestion
 
