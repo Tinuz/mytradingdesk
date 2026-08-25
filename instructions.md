@@ -12,7 +12,8 @@ The product specification supplied for this repository is authoritative. Its cen
 - Limit V0.1 to BTC and ETH and the explicitly approved indicators.
 - Classify unvalidated model assumptions as `HYPOTHESIS`.
 - Treat data quality and freshness tests as financial-logic tests, not optional plumbing.
-- Do not implement execution, leverage, sentiment scoring, allocation advice, or ML price prediction.
+- Do not implement execution, leverage, sentiment scoring, or ML price prediction.
+- Allocation functionality is limited to deterministic, versioned `SHADOW` decision support for BTC, ETH and cash. It must use user-owned mandates, target ranges, human approval and explicit evidence labels; it may not place orders or be presented as validated personalized advice until the capital-readiness gate passes.
 
 ## Change control
 

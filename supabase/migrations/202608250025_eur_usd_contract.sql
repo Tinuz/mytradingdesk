@@ -1,0 +1,5 @@
+begin;
+insert into public.providers(name,priority,supports_backfill)values('ecb-fx',1,true)on conflict(name)do nothing;
+insert into public.indicators(code,name,category,unit,expected_frequency,stale_after_seconds,data_contract,canonical_source)values('EUR_USD','ECB euro reference rate in US dollars','fx','usd_per_eur',interval'1 day',345600,'{"minimum":0.5,"maximum":2,"canonicalProvider":"ecb-fx","sourceSeries":"EXR/D.USD.EUR.SP00.A","allocationUse":"EUR portfolio conversion"}','ECB')on conflict(code)do nothing;
+insert into public.source_governance(provider_id,version,approval_status,source_url,terms_url,automation_rights,historical_storage_rights,rate_limit,freshness_contract,fallback_policy,reviewed_at,notes)select id,'ecb-public-data-v1','APPROVED','https://data-api.ecb.europa.eu/','https://www.ecb.europa.eu/services/disclaimer/html/index.en.html','ALLOWED','ALLOWED','Public SDMX endpoint','Daily; stale after four days','Fail closed; no silent FX substitute',now(),'Official ECB reference-rate API; approval is limited to this application use and recorded methodology.'from public.providers where name='ecb-fx';
+commit;

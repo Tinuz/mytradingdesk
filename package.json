@@ -41,6 +41,7 @@
     "alerts:live": "vite-node scripts/process-alerts.ts --live",
     "alerts:historical": "vite-node scripts/process-alerts.ts --historical",
     "trust:capture": "vite-node scripts/capture-trust-observation.ts",
+    "portfolio:snapshot": "vite-node scripts/capture-portfolio-snapshots.ts",
     "validation:replay": "vite-node scripts/run-validation-replay.ts",
     "validation:audit-point-in-time": "vite-node scripts/audit-point-in-time.ts",
     "shadow:cycle": "vite-node scripts/run-shadow-cycle.ts",

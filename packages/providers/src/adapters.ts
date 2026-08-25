@@ -271,6 +271,12 @@ export class EcbDxyProxyProvider implements HistoricalDataProvider {
       });
   }
 }
+export class EcbEurUsdProvider implements HistoricalDataProvider {
+  readonly name="ecb-fx";readonly role:ProviderRole="CANONICAL";readonly supportedIndicators=["EUR_USD"]as const;readonly supportsBackfill=true;readonly expectedLatency="daily ECB reference-rate publication";readonly rateLimit="public SDMX endpoint";
+  constructor(private readonly fetcher:Fetch=fetch){}
+  async fetchLatest(indicator:PhaseOneIndicator){const to=new Date();return(await this.fetchRange(indicator,new Date(to.getTime()-10*86_400_000),to)).slice(-1)}
+  async fetchRange(indicator:PhaseOneIndicator,from:Date,to:Date){if(indicator!=="EUR_USD")throw new Error(`ecb-fx does not support ${indicator}`);const params=new URLSearchParams({startPeriod:from.toISOString().slice(0,10),endPeriod:to.toISOString().slice(0,10),format:"csvdata",detail:"dataonly"});const response=await this.fetcher(`https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?${params}`);if(!response.ok)throw new Error(`ecb-fx HTTP ${response.status}`);const rows=parseCsv(await response.text()),header=rows.shift()?.map(x=>x.trim().replace(/^\uFEFF/,""))??[],di=header.indexOf("TIME_PERIOD"),vi=header.indexOf("OBS_VALUE");if(di<0||vi<0)throw new Error("ecb-fx CSV columns missing");return rows.flatMap(row=>{const date=row[di],raw=row[vi],value=Number(raw);return date&&Number.isFinite(value)?[{indicator,observedAt:new Date(`${date}T00:00:00Z`),value,unit:"usd_per_eur",providerReference:`ECB-EURUSD-v1:${date}`,payload:{date,value,series:"EXR/D.USD.EUR.SP00.A"}}satisfies ProviderObservation]:[]})}
+}
 
 export class FredBroadDollarProvider implements HistoricalDataProvider {
   readonly name = "fred-broad-dollar";

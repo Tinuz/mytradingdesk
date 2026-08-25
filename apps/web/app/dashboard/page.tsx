@@ -18,11 +18,6 @@ const direction = (current: number, previous: number | undefined) =>
     : current > previous
       ? { arrow: "↑", label: "IMPROVING" }
       : { arrow: "↓", label: "DETERIORATING" };
-const overall = (item: DecisionView) => {
-  const total =
-    item.macro_score + item.crypto_score + item.market_structure_score;
-  return total >= 3 ? "CONSTRUCTIVE" : total <= -3 ? "DEFENSIVE" : "MIXED";
-};
 const factors = (item: DecisionView): Array<Factor & { score: number }> =>
   [
     ...item.macro_factors.factors,
@@ -217,16 +212,10 @@ export default async function DashboardPage() {
       history.find((row) => row.symbol === item.symbol && row.id !== item.id),
     ]),
   );
-  const overallMove = direction(
-    reference.macro_score +
-      reference.crypto_score +
-      reference.market_structure_score,
-    previous
-      ? previous.macro_score +
-          previous.crypto_score +
-          previous.market_structure_score
-      : undefined,
-  );
+  const opportunityMove =
+    reference.opportunity_score === null
+      ? { arrow: "→", label: "UNAVAILABLE" }
+      : direction(reference.opportunity_score, previous?.opportunity_score ?? undefined);
   return (
     <Shell current="dashboard">
       <header className="intelligence-head">
@@ -235,18 +224,18 @@ export default async function DashboardPage() {
             Market environment / shadow intelligence
           </span>
           <span className="title-with-info">
-            <h1>{overall(reference)}</h1>
+            <h1>{reference.opportunity_state ? pretty(reference.opportunity_state) : "OPPORTUNITY UNAVAILABLE"}</h1>
             <InfoTip
               label="Market Environment"
               title="Samenvatting van het marktklimaat"
               watchFor={[
-                "Kijk of macro, crypto-credit en marktstructuur elkaar bevestigen.",
-                "MIXED betekent onzekerheid, niet automatisch verkopen.",
+                "Kijk of macro, crypto-credit en het assetregime elkaar bevestigen.",
+                "Lees Market Structure daarnaast als zelfstandige stressas.",
               ]}
             >
-              Combineert de drie brede modelagen. CONSTRUCTIVE, MIXED en
-              DEFENSIVE zijn ordinale toestanden, geen kansen of
-              koersvoorspellingen.
+              Toont de opgeslagen opportunity-staat uit macro, crypto-credit en
+              het assetregime. Market Structure wordt hier bewust niet bij
+              opgeteld en blijft een zelfstandige stressas.
             </InfoTip>
           </span>
           <p>
@@ -257,12 +246,12 @@ export default async function DashboardPage() {
           </p>
         </div>
         <div className="environment-direction">
-          <span>{overallMove.arrow}</span>
+          <span>{opportunityMove.arrow}</span>
           <div>
             <small className="metric-label">
-              Direction
+              Opportunity direction
               <InfoTip
-                label="Direction"
+                label="Opportunity direction"
                 title="Verandering sinds de vorige snapshot"
                 align="right"
                 watchFor={[
@@ -270,11 +259,11 @@ export default async function DashboardPage() {
                   "STABLE betekent onveranderd model, niet lage volatiliteit.",
                 ]}
               >
-                Vergelijkt de samengestelde score met de vorige live snapshot;
-                dit voorspelt niet de grootte of duur van een prijsbeweging.
+                Vergelijkt alleen de opgeslagen opportunity-score met de vorige
+                live snapshot. Market stress is hiervan uitgesloten.
               </InfoTip>
             </small>
-            <strong>{overallMove.label}</strong>
+            <strong>{opportunityMove.label}</strong>
             <time>
               Updated{" "}
               {new Intl.DateTimeFormat("nl-NL", {

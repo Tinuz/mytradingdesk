@@ -31,6 +31,10 @@ export interface DecisionView {
   engine_version: string;
   transition_reason: string;
   risk_override: string;
+  opportunity_state: string | null;
+  opportunity_score: number | null;
+  stress_state: string | null;
+  stress_score: number | null;
   model_validation_status: "UNVALIDATED" | "SHADOW" | "VALIDATED";
   snapshot_freshness: "CURRENT" | "STALE";
   macro_state: string;
@@ -177,6 +181,32 @@ export interface V1GateAssessment {
   blockers: string[];
   metrics: Record<string, number>;
 }
+export interface InvestorMandateView {
+  id: string;
+  version: string;
+  base_currency: "EUR" | "USD";
+  objective: "CAPITAL_PRESERVATION" | "BALANCED" | "GROWTH";
+  horizon_months: number;
+  maximum_drawdown_percent: number;
+  minimum_cash_percent: number;
+  maximum_asset_weight_percent: number;
+  annual_turnover_budget_percent: number;
+  rebalance_cadence: "WEEKLY" | "MONTHLY" | "QUARTERLY";
+  allowed_assets: Array<"BTC" | "ETH">;
+  evidence_status: "SHADOW";
+  effective_at: string;
+}
+export interface BenchmarkDefinitionView {
+  code: string;
+  version: string;
+  status: "FROZEN" | "RETIRED";
+  definition: Record<string, unknown>;
+  frozen_at: string;
+  notes: string;
+}
+export interface PortfolioAccountView { id:string;name:string;base_currency:"EUR"|"USD";account_type:string;created_at:string }
+export interface PortfolioHoldingView { account_id:string;symbol:"CASH"|"BTC"|"ETH";quantity:number }
+export interface PortfolioTransactionView { id:string;account_id:string;transaction_type:string;symbol:string;quantity:number;unit_price:number;fee:number;executed_at:string;notes:string|null;portfolio_accounts:{name:string}|null }
 export interface DashboardHistoryPoint {
   evaluation_date: string;
   decision_state: string;
@@ -492,6 +522,87 @@ export async function v1GateAssessment() {
     return null;
   }
   return data as V1GateAssessment | null;
+}
+export async function currentInvestorMandate() {
+  const client = await database();
+  if (!client) return null;
+  const { data, error } = await client
+    .from("current_investor_mandate")
+    .select("*")
+    .maybeSingle();
+  if (error) {
+    handleQueryError("current_investor_mandate", error);
+    return null;
+  }
+  return data as InvestorMandateView | null;
+}
+export async function benchmarkDefinitions() {
+  const client = await database();
+  if (!client) return [] as BenchmarkDefinitionView[];
+  const { data, error } = await client
+    .from("benchmark_definitions")
+    .select("code,version,status,definition,frozen_at,notes")
+    .eq("status", "FROZEN")
+    .order("code");
+  if (error) {
+    handleQueryError("benchmark_definitions", error);
+    return [];
+  }
+  return data as BenchmarkDefinitionView[];
+}
+export async function appendInvestorMandate(input: {
+  baseCurrency: string;
+  objective: string;
+  horizonMonths: number;
+  maximumDrawdownPercent: number;
+  minimumCashPercent: number;
+  maximumAssetWeightPercent: number;
+  annualTurnoverBudgetPercent: number;
+  rebalanceCadence: string;
+  allowedAssets: string[];
+}) {
+  const client = await database();
+  if (!client) throw new Error("Database niet geconfigureerd");
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData.user) throw new Error("Niet geautoriseerd");
+  const allowedCurrencies = new Set(["EUR", "USD"]),
+    allowedObjectives = new Set(["CAPITAL_PRESERVATION", "BALANCED", "GROWTH"]),
+    allowedCadences = new Set(["WEEKLY", "MONTHLY", "QUARTERLY"]),
+    assets = [...new Set(input.allowedAssets)].filter((asset) => asset === "BTC" || asset === "ETH"),
+    numeric = [input.horizonMonths, input.maximumDrawdownPercent, input.minimumCashPercent, input.maximumAssetWeightPercent, input.annualTurnoverBudgetPercent];
+  if (!allowedCurrencies.has(input.baseCurrency) || !allowedObjectives.has(input.objective) || !allowedCadences.has(input.rebalanceCadence) || !assets.length || numeric.some((value) => !Number.isFinite(value))) throw new Error("Ongeldig investormandaat");
+  if (input.horizonMonths < 3 || input.horizonMonths > 240 || input.maximumDrawdownPercent < 1 || input.maximumDrawdownPercent > 80 || input.minimumCashPercent < 0 || input.minimumCashPercent > 100 || input.maximumAssetWeightPercent < 1 || input.maximumAssetWeightPercent > 100 || input.minimumCashPercent + input.maximumAssetWeightPercent > 100 || input.annualTurnoverBudgetPercent < 0 || input.annualTurnoverBudgetPercent > 2000) throw new Error("Mandaatlimieten vallen buiten het toegestane bereik");
+  const now = new Date();
+  const { error } = await client.from("investor_mandates").insert({
+    user_id: userData.user.id,
+    version: `mandate-v1-${now.toISOString()}-${crypto.randomUUID()}`,
+    base_currency: input.baseCurrency,
+    objective: input.objective,
+    horizon_months: input.horizonMonths,
+    maximum_drawdown_percent: input.maximumDrawdownPercent,
+    minimum_cash_percent: input.minimumCashPercent,
+    maximum_asset_weight_percent: input.maximumAssetWeightPercent,
+    annual_turnover_budget_percent: input.annualTurnoverBudgetPercent,
+    rebalance_cadence: input.rebalanceCadence,
+    allowed_assets: assets,
+    evidence_status: "SHADOW",
+    effective_at: now.toISOString(),
+  });
+  if (error) throw error;
+}
+export async function portfolioOverview() {
+  const client=await database();if(!client)return{accounts:[]as PortfolioAccountView[],holdings:[]as PortfolioHoldingView[],transactions:[]as PortfolioTransactionView[]};
+  const[accounts,holdings,transactions]=await Promise.all([client.from("portfolio_accounts").select("id,name,base_currency,account_type,created_at").order("created_at"),client.from("portfolio_holdings").select("account_id,symbol,quantity").order("symbol"),client.from("portfolio_transactions").select("id,account_id,transaction_type,symbol,quantity,unit_price,fee,executed_at,notes,portfolio_accounts(name)").order("executed_at",{ascending:false}).limit(100)]);
+  for(const[source,result]of[["portfolio_accounts",accounts],["portfolio_holdings",holdings],["portfolio_transactions",transactions]]as const)if(result.error)handleQueryError(source,result.error);
+  return{accounts:(accounts.data??[])as PortfolioAccountView[],holdings:(holdings.data??[]).map(x=>({...x,quantity:Number(x.quantity)}))as PortfolioHoldingView[],transactions:(transactions.data??[]).map(x=>({...x,quantity:Number(x.quantity),unit_price:Number(x.unit_price),fee:Number(x.fee)}))as unknown as PortfolioTransactionView[]};
+}
+export async function createPortfolioAccount(input:{name:string;baseCurrency:string}){
+  const client=await database();if(!client)throw new Error("Database niet geconfigureerd");const{data:userData,error:userError}=await client.auth.getUser();if(userError||!userData.user)throw new Error("Niet geautoriseerd");const name=input.name.trim();if(name.length<2||name.length>80||!(input.baseCurrency==="EUR"||input.baseCurrency==="USD"))throw new Error("Ongeldig portfolioaccount");const{error}=await client.from("portfolio_accounts").insert({user_id:userData.user.id,name,base_currency:input.baseCurrency,account_type:"MANUAL"});if(error)throw error;
+}
+export async function appendPortfolioTransaction(input:{accountId:string;type:string;symbol:string;quantity:number;unitPrice:number;fee:number;executedAt:string;notes:string}){
+  const client=await database();if(!client)throw new Error("Database niet geconfigureerd");const{data:userData,error:userError}=await client.auth.getUser();if(userError||!userData.user)throw new Error("Niet geautoriseerd");const types=new Set(["DEPOSIT","WITHDRAWAL","BUY","SELL","FEE"]),assets=new Set(["BTC","ETH"]),cashTypes=new Set(["DEPOSIT","WITHDRAWAL","FEE"]),symbol=cashTypes.has(input.type)?"CASH":input.symbol;
+  if(!types.has(input.type)||!Number.isFinite(input.quantity)||input.quantity<=0||!Number.isFinite(input.unitPrice)||input.unitPrice<0||!Number.isFinite(input.fee)||input.fee<0||!input.executedAt||((input.type==="BUY"||input.type==="SELL")&&(!assets.has(symbol)||input.unitPrice<=0)))throw new Error("Ongeldige transactie");
+  const{data:account,error:accountError}=await client.from("portfolio_accounts").select("id").eq("id",input.accountId).eq("user_id",userData.user.id).maybeSingle();if(accountError||!account)throw new Error("Portfolioaccount niet gevonden");const{error}=await client.from("portfolio_transactions").insert({user_id:userData.user.id,account_id:account.id,transaction_type:input.type,symbol,quantity:input.quantity,unit_price:cashTypes.has(input.type)?0:input.unitPrice,fee:input.fee,executed_at:new Date(input.executedAt).toISOString(),notes:input.notes.trim()||null});if(error)throw error;
 }
 export async function dashboardHistory() {
   const client = await database();

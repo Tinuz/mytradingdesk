@@ -45,6 +45,66 @@ export type InvestmentRegime = (typeof INVESTMENT_REGIMES)[number];
 export const CONFIDENCE_LEVELS = ["LOW", "MEDIUM", "HIGH"] as const;
 export type ConfidenceLevel = (typeof CONFIDENCE_LEVELS)[number];
 
+export const EVIDENCE_STATUSES = ["HYPOTHESIS", "SHADOW", "VALIDATED", "RETIRED"] as const;
+export type EvidenceStatus = (typeof EVIDENCE_STATUSES)[number];
+
+export interface RecommendationReference {
+  id: string;
+  version: string;
+}
+
+export const INVESTOR_OBJECTIVES = ["CAPITAL_PRESERVATION", "BALANCED", "GROWTH"] as const;
+export type InvestorObjective = (typeof INVESTOR_OBJECTIVES)[number];
+export const REBALANCE_CADENCES = ["WEEKLY", "MONTHLY", "QUARTERLY"] as const;
+export type RebalanceCadence = (typeof REBALANCE_CADENCES)[number];
+
+export interface InvestorMandate {
+  id: string;
+  version: string;
+  baseCurrency: "EUR" | "USD";
+  objective: InvestorObjective;
+  horizonMonths: number;
+  maximumDrawdownPercent: number;
+  minimumCashPercent: number;
+  maximumAssetWeightPercent: number;
+  annualTurnoverBudgetPercent: number;
+  rebalanceCadence: RebalanceCadence;
+  allowedAssets: readonly AssetSymbol[];
+  evidenceStatus: "SHADOW";
+  effectiveAt: string;
+}
+
+export interface BenchmarkDefinition {
+  code: "BTC_HOLD" | "BTC_CASH_50_50" | "BTC_ETH_60_40" | "BTC_200DMA";
+  version: string;
+  status: "FROZEN" | "RETIRED";
+  definition: Readonly<Record<string, unknown>>;
+  frozenAt: string;
+}
+
+/**
+ * Audit contract for a future allocation recommendation. The current product
+ * may persist and expose SHADOW records against this contract. Live order
+ * execution and claims of validated personalized advice remain out of scope.
+ */
+export interface CapitalAllocationRecommendation {
+  id: string;
+  asset: AssetSymbol;
+  calculatedAt: string;
+  opportunityState: InvestmentRegime;
+  stressState: MarketStructureRegime;
+  evidenceStatus: EvidenceStatus;
+  decisionSnapshot: RecommendationReference;
+  valuationSnapshot: RecommendationReference;
+  scenarioSet: RecommendationReference;
+  mandate: RecommendationReference;
+  riskPolicy: RecommendationReference;
+  allocationPolicy: RecommendationReference;
+  targetRangePercent: { minimum: number; maximum: number } | null;
+  bindingConstraints: readonly string[];
+  warnings: readonly string[];
+}
+
 export const OBSERVATION_QUALITY_STATES = [
   "VALID", "STALE", "SUSPECT", "QUARANTINED", "REJECTED"
 ] as const;

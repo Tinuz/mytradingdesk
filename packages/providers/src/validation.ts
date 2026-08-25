@@ -1,29 +1,12 @@
 import { z } from "zod";
-import type {
+import { PHASE_ONE_INDICATORS, type
   DataContract,
   ProviderObservation,
   StoredRawObservation,
 } from "./types";
 
 const observationSchema = z.object({
-  indicator: z.enum([
-    "BTC_USD",
-    "ETH_USD",
-    "DXY",
-    "DXY_PROXY_ECB",
-    "US_BROAD_DOLLAR_INDEX",
-    "US10Y_REAL",
-    "STABLECOIN_SUPPLY_USD",
-    "BTC_ETF_NET_FLOW_USD",
-    "ETH_ETF_NET_FLOW_USD",
-    "US_NET_LIQUIDITY_USD",
-    "GLOBAL_LIQUIDITY_USD",
-    "DEFI_ACTIVE_LOANS_USD",
-    "BTC_MVRV",
-    "BTC_REALIZED_LOSSES_USD",
-    "BTC_PERPETUAL_OI_USD",
-    "BTC_MARKET_CAP_USD",
-  ]),
+  indicator: z.enum(PHASE_ONE_INDICATORS),
   observedAt: z.date(),
   publishedAt: z.date().optional(),
   revisionAt: z.date().optional(),

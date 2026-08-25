@@ -61,6 +61,14 @@ Every evaluation is a pure function of observations, evaluation timestamp and co
 
 The same framework-independent package maps the three separately visible regime scores through a complete versioned decision matrix. Transition memory is explicit input/output, so hysteresis and two-observation persistence are deterministic and replayable rather than hidden process state. Confidence and explanation facts are structured engine output. Database persistence remains an adapter responsibility; idempotency indexes protect regime and decision snapshots from job retries. Alerts remain outside the engine and inactive until Phase 6.
 
+Decision Engine `0.6.2-hypothesis.1` persists opportunity and stress as separate axes. Opportunity uses Macro Liquidity, Crypto Credit and the Asset regime; Market Structure supplies independent stress governance and is never added to the opportunity score. The experience layer consumes these stored outputs and may not reconstruct either classification.
+
+## Capital allocation foundation
+
+Allocation remains shadow decision support. User-owned investor mandates are append-only versions protected by RLS; a change creates a new row instead of rewriting the mandate used by historical evidence. Benchmark definitions are immutable and frozen before evaluation. Recommendation records will reference exact mandate, benchmark, valuation, scenario, risk-policy and allocation-policy versions. No component has trading or withdrawal authority.
+
+Methodology versions and source-governance decisions are append-only. Technical API access never implies automation or historical-storage rights; unreviewed providers remain `REVIEW_REQUIRED`. Portfolio accounts and transactions are user-owned under RLS, transactions are immutable, and portfolio snapshots must retain the exact mandate, price observations and calculation version used.
+
 ## Phase 5 experience
 
 Authenticated React Server Components read security-invoker database views through the user's Supabase session. `decision_experience` reconstructs the three referenced regimes for each immutable decision snapshot; `indicator_health` exposes only canonical values, freshness and provider provenance. Raw payloads and provider credentials never enter the experience boundary. Dashboard, asset drill-down, history and research pages contain formatting and navigation only—no thresholds, matrix rules or transition logic.

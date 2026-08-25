@@ -78,7 +78,7 @@ for (const asset of assets ?? []) {
     .from("decision_snapshots")
     .select("decision_state,pending_state,consecutive_observations")
     .eq("asset_id", asset.id)
-    .eq("engine_version", "0.6.1-hypothesis.1")
+    .in("engine_version", ["0.6.2-hypothesis.1", "0.6.1-hypothesis.1"])
     .order("calculated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -117,6 +117,10 @@ for (const asset of assets ?? []) {
     consecutive_observations: decision.memory.consecutiveObservations,
     transition_reason: decision.transitionReason,
     risk_override: decision.riskOverride,
+    opportunity_state: decision.opportunityState,
+    opportunity_score: decision.opportunityScore,
+    stress_state: decision.stressState,
+    stress_score: decision.stressScore,
   });
   if (error) throw error;
   results.push({
@@ -129,7 +133,7 @@ for (const asset of assets ?? []) {
 }
 console.log(
   JSON.stringify(
-    { engineVersion: "0.6.1-hypothesis.1", decisions: results },
+    { engineVersion: "0.6.2-hypothesis.1", decisions: results },
     null,
     2,
   ),

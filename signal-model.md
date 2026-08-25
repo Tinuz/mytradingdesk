@@ -2,7 +2,7 @@
 
 ## V3 migration status
 
-Regime Engine `0.5.1-hypothesis.1`, Decision Engine `0.6.1-hypothesis.1` and Alert Engine `0.7.0-hypothesis.1` are active. Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
+Regime Engine `0.5.1-hypothesis.1`, Decision Engine `0.6.2-hypothesis.1` and Alert Engine `0.7.0-hypothesis.1` are active. Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
 
 ### V3 regime semantics
 
@@ -16,7 +16,7 @@ Current thresholds are explicit hypotheses. Independent factor families are aggr
 
 ### V3 Decision Engine
 
-Decision engine `0.6.1-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance:
+Decision engine `0.6.2-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance. Both the pre-governance opportunity state and the independent stress state are persisted. They must never be recombined in the experience layer:
 
 - `ELEVATED_RISK` and `OVERHEATED` cap `STRONG_ACCUMULATION` at `ACCUMULATION`.
 - `STRESSED` caps otherwise positive accumulation states at `NEUTRAL`.

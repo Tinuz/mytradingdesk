@@ -88,6 +88,19 @@ const dollarActivationMigration = readFileSync(
   ),
   "utf8",
 );
+const opportunityStressMigration = readFileSync(
+  resolve(
+    "supabase/migrations/202608250022_opportunity_stress_contract.sql",
+  ),
+  "utf8",
+);
+const mandateBenchmarkMigration = readFileSync(
+  resolve(
+    "supabase/migrations/202608250023_investor_mandates_benchmarks.sql",
+  ),
+  "utf8",
+);
+const governancePortfolioMigration = readFileSync(resolve("supabase/migrations/202608250024_governance_portfolio_ledger.sql"),"utf8");
 const requiredTables = [
   "assets",
   "providers",
@@ -299,6 +312,44 @@ describe("ECB dollar-strength hypothesis activation", () => {
     expect(dollarActivationMigration).toContain("0.6.1-hypothesis.1");
     expect(dollarActivationMigration).toContain("divergenceLowersConfidence");
   });
+});
+
+describe("Opportunity and stress decision contract", () => {
+  it("persists both axes without enabling allocation advice", () => {
+    expect(opportunityStressMigration).toContain("opportunity_state text");
+    expect(opportunityStressMigration).toContain("stress_state text");
+    expect(opportunityStressMigration).toContain('"stressIsIndependent":true');
+    expect(opportunityStressMigration).toContain('"allocationAdviceActive":false');
+  });
+  it("exposes persisted axes through the authenticated experience view", () => {
+    expect(opportunityStressMigration).toContain("d.opportunity_state");
+    expect(opportunityStressMigration).toContain("d.stress_state");
+    expect(opportunityStressMigration).not.toMatch(/macro_score\s*\+\s*crypto_score\s*\+\s*market_structure_score/i);
+  });
+});
+
+describe("Investor mandates and frozen benchmarks", () => {
+  it("keeps user mandates append-only and protected by ownership", () => {
+    expect(mandateBenchmarkMigration).toContain("create table public.investor_mandates");
+    expect(mandateBenchmarkMigration).toContain("users append own mandates");
+    expect(mandateBenchmarkMigration).toContain("investor_mandates_immutable");
+    expect(mandateBenchmarkMigration).not.toContain("for update to authenticated");
+  });
+  it.each(["BTC_HOLD", "BTC_CASH_50_50", "BTC_ETH_60_40", "BTC_200DMA"])(
+    "freezes benchmark %s",
+    (benchmark) => expect(mandateBenchmarkMigration).toContain(`('${benchmark}'`),
+  );
+  it("defines costs, timing and missing-data behavior before evaluation", () => {
+    expect(mandateBenchmarkMigration).toContain('"feesBps":10');
+    expect(mandateBenchmarkMigration).toContain("NEXT_AVAILABLE_UTC_CLOSE");
+    expect(mandateBenchmarkMigration).toContain('"missingData"');
+  });
+});
+describe("Methodology, source and portfolio governance",()=>{
+  it("keeps methodology and source decisions immutable",()=>{expect(governancePortfolioMigration).toContain("methodology_versions_immutable");expect(governancePortfolioMigration).toContain("source_governance_immutable");});
+  it("does not infer provider rights",()=>{expect(governancePortfolioMigration).toContain("'REVIEW_REQUIRED','UNKNOWN','UNKNOWN'");expect(governancePortfolioMigration).toContain("No rights inferred");});
+  it("creates an append-only user-owned ledger",()=>{expect(governancePortfolioMigration).toContain("create table public.portfolio_transactions");expect(governancePortfolioMigration).toContain("portfolio_transactions_immutable");expect(governancePortfolioMigration).toContain("users append own portfolio transactions");});
+  it("makes snapshots reproducible",()=>{expect(governancePortfolioMigration).toContain("price_observation_ids uuid[] not null");expect(governancePortfolioMigration).toContain("calculation_version text not null");});
 });
 
 describe("V3 crypto credit contracts", () => {

@@ -7,7 +7,7 @@ import type {
   V3FactorResult,
 } from "./types";
 export const V3_DECISION_CONFIG = {
-  version: "0.6.1-hypothesis.1",
+  version: "0.6.2-hypothesis.1",
   persistenceObservations: 2,
   hysteresis: {
     STRONG_ACCUMULATION: { enter: 5, exit: 3 },
@@ -152,7 +152,36 @@ function hysteresis(
 }
 export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
   const previous = input.memory?.currentState ?? null;
+  const availableOpportunity =
+    input.macroLiquidity.status === "AVAILABLE" &&
+    input.macroLiquidity.score !== null &&
+    input.cryptoCreditLiquidity.status === "AVAILABLE" &&
+    input.cryptoCreditLiquidity.score !== null &&
+    input.asset.status === "AVAILABLE" &&
+    input.asset.score !== null;
+  const opportunityScore = availableOpportunity
+    ? input.macroLiquidity.score! +
+      input.cryptoCreditLiquidity.score! +
+      input.asset.score!
+    : null;
+  const opportunityState = availableOpportunity
+    ? opportunity(
+        input.macroLiquidity.score!,
+        input.cryptoCreditLiquidity.score!,
+        input.asset.score!,
+      )
+    : null;
   const base = {
+    opportunityState,
+    opportunityScore,
+    stressState:
+      input.marketStructure.status === "AVAILABLE"
+        ? input.marketStructure.state
+        : null,
+    stressScore:
+      input.marketStructure.status === "AVAILABLE"
+        ? input.marketStructure.score
+        : null,
     previousState: previous,
     confidence: confidence(input),
     explanationFacts: explain(input),

@@ -4,7 +4,9 @@ An explainable, deterministic macro and crypto regime detection system for disci
 
 ## Current status
 
-The v3 analytical pipeline is active across four independent layers. Decision Engine `0.6.1-hypothesis.1` produces explainable BTC and ETH decisions. Alert Engine `0.7.0-hypothesis.1` turns only new live material changes into deduplicated in-app notifications and optional email. Exact DXY/NYICDX remains an explicit backlog exception; the separately named keyless ECB-derived 90-day dollar-strength hypothesis contributes a capped context score while the FRED broad-dollar series remains validation-only.
+The v3 analytical pipeline is active across four independent layers. Decision Engine `0.6.2-hypothesis.1` produces explainable BTC and ETH decisions while persisting opportunity separately from Market Structure stress. Alert Engine `0.7.0-hypothesis.1` turns only new live material changes into deduplicated in-app notifications and optional email. Exact DXY/NYICDX remains an explicit backlog exception; the separately named keyless ECB-derived 90-day dollar-strength hypothesis contributes a capped context score while the FRED broad-dollar series remains validation-only.
+
+The authenticated `/mandate` route defines append-only BTC/ETH/cash investor constraints for future shadow allocation work. Four benchmark methodologies are frozen in PostgreSQL before performance evaluation. The application does not execute orders or use leverage.
 
 ## Requirements
 

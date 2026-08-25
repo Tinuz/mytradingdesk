@@ -3,6 +3,7 @@ import type { ObservationQuality } from "@cmip/domain";
 export const PHASE_ONE_INDICATORS = [
   "BTC_USD",
   "ETH_USD",
+  "EUR_USD",
   "DXY",
   "DXY_PROXY_ECB",
   "US_BROAD_DOLLAR_INDEX",

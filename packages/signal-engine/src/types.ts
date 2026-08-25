@@ -130,6 +130,12 @@ export interface V3DecisionInput {
   dataQualityIssues?: readonly DataQualityIssue[];
 }
 export interface V3DecisionOutput {
+  /** Opportunity before market-structure risk governance is applied. */
+  opportunityState: InvestmentRegime | null;
+  opportunityScore: number | null;
+  /** Market Structure remains an independent stress axis. */
+  stressState: MarketStructureRegime | null;
+  stressScore: RegimeScore | null;
   state: InvestmentRegime | null;
   candidateState: InvestmentRegime | null;
   previousState: InvestmentRegime | null;
@@ -151,7 +157,7 @@ export interface V3DecisionOutput {
     contradictorySignals: readonly V3ExplanationFact[];
     dataWarnings: readonly string[];
   };
-  engineVersion: "0.6.1-hypothesis.1";
+  engineVersion: "0.6.2-hypothesis.1";
 }
 
 export interface EngineObservation {

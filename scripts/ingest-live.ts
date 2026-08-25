@@ -4,6 +4,7 @@ import {
   CoinGeckoProvider,
   DefiLlamaStablecoinProvider,
   EcbDxyProxyProvider,
+  EcbEurUsdProvider,
   FredBroadDollarProvider,
   FredGlobalLiquidityProvider,
   FredLiquidityProvider,
@@ -31,6 +32,8 @@ async function main() {
   const coinGecko = new CoinGeckoProvider(process.env.COINGECKO_API_KEY);
   const fred = new FredProvider(required("FRED_API_KEY"));
   const twelveData = new TwelveDataProvider(required("TWELVE_DATA_API_KEY"));
+  const eurUsdProvider=new EcbEurUsdProvider();
+  const eurUsd=await pipeline.fetchAndIngest(eurUsdProvider,"EUR_USD");console.log(JSON.stringify({indicator:"EUR_USD",provider:eurUsdProvider.name,...eurUsd}));
 
   for (const indicator of ["BTC_USD", "ETH_USD"] as const) {
     const result = await pipeline.fetchAndIngest(coinGecko, indicator);
