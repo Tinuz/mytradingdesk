@@ -239,6 +239,7 @@ export interface AllocationWorkspace {
   paper: Record<string, unknown> | null;
   readiness: Record<string, unknown> | null;
   signoffs: Array<Record<string, unknown>>;
+  snapshot: Record<string, unknown> | null;
 }
 export interface DashboardHistoryPoint {
   evaluation_date: string;
@@ -439,34 +440,83 @@ export async function notificationInbox() {
     handleQueryError("notification_inbox", error);
     return [];
   }
-  return data as NotificationView[];
+  const { data: settings } = await client
+    .from("user_product_settings")
+    .select("actionable_notifications_only")
+    .maybeSingle();
+  const rows = data as NotificationView[];
+  return settings?.actionable_notifications_only
+    ? rows.filter(
+        (x) =>
+          ["HIGH", "CRITICAL"].includes(x.severity) ||
+          [
+            "DECISION_TRANSITION",
+            "RISK_OVERRIDE",
+            "DATA_FREEZE",
+            "MANDATE_BREACH",
+            "THESIS_INVALIDATED",
+          ].includes(x.alert_type),
+      )
+    : rows;
 }
 export async function notificationPreference() {
   const client = await database();
-  if (!client) return { email_enabled: false, cooldown_hours: 24 };
-  const { data, error } = await client
-    .from("notification_preferences")
-    .select("email_enabled,cooldown_hours")
-    .maybeSingle();
+  if (!client)
+    return {
+      email_enabled: false,
+      cooldown_hours: 24,
+      actionable_notifications_only: true,
+    };
+  const [{ data, error }, { data: settings }] = await Promise.all([
+    client
+      .from("notification_preferences")
+      .select("email_enabled,cooldown_hours")
+      .maybeSingle(),
+    client
+      .from("user_product_settings")
+      .select("actionable_notifications_only")
+      .maybeSingle(),
+  ]);
   if (error) {
     handleQueryError("notification_preferences", error);
-    return { email_enabled: false, cooldown_hours: 24 };
+    return {
+      email_enabled: false,
+      cooldown_hours: 24,
+      actionable_notifications_only: true,
+    };
   }
-  return data ?? { email_enabled: false, cooldown_hours: 24 };
+  return {
+    ...(data ?? { email_enabled: false, cooldown_hours: 24 }),
+    actionable_notifications_only:
+      settings?.actionable_notifications_only ?? true,
+  };
 }
 export async function markNotificationsRead() {
   const client = await database();
   if (!client) throw new Error("Database niet geconfigureerd");
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw new Error("Niet geautoriseerd");
-  const { error } = await client
+  const { data: settings } = await client
+    .from("user_product_settings")
+    .select("actionable_notifications_only")
+    .maybeSingle();
+  let query = client
     .from("alerts")
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", userData.user.id)
     .is("read_at", null);
+  if (settings?.actionable_notifications_only) {
+    query = query.or(
+      "severity.in.(HIGH,CRITICAL),alert_type.in.(DECISION_TRANSITION,RISK_OVERRIDE,DATA_FREEZE,MANDATE_BREACH,THESIS_INVALIDATED)",
+    );
+  }
+  const { error } = await query;
   if (error) throw error;
 }
-export async function saveNotificationPreference(emailEnabled: boolean) {
+export async function saveNotificationPreference(
+  emailEnabled: boolean,
+  actionableOnly = true,
+) {
   const client = await database();
   if (!client) throw new Error("Database niet geconfigureerd");
   const { data: userData, error: userError } = await client.auth.getUser();
@@ -482,6 +532,15 @@ export async function saveNotificationPreference(emailEnabled: boolean) {
     { onConflict: "user_id" },
   );
   if (error) throw error;
+  const settings = await client.from("user_product_settings").upsert(
+    {
+      user_id: userData.user.id,
+      actionable_notifications_only: actionableOnly,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+  if (settings.error) throw settings.error;
 }
 export async function journalEntries() {
   const client = await database();
@@ -658,7 +717,7 @@ export async function portfolioOverview() {
       accounts: [] as PortfolioAccountView[],
       holdings: [] as PortfolioHoldingView[],
       transactions: [] as PortfolioTransactionView[],
-      prices: {} as Record<string,number>,
+      prices: {} as Record<string, number>,
     };
   const [accounts, holdings, transactions, prices] = await Promise.all([
     client
@@ -676,7 +735,12 @@ export async function portfolioOverview() {
       )
       .order("executed_at", { ascending: false })
       .limit(100),
-    client.from("canonical_observations").select("value,indicators!inner(code)").in("indicators.code",["BTC_USD","ETH_USD"]).order("observed_at",{ascending:false}).limit(10),
+    client
+      .from("canonical_observations")
+      .select("value,indicators!inner(code)")
+      .in("indicators.code", ["BTC_USD", "ETH_USD"])
+      .order("observed_at", { ascending: false })
+      .limit(10),
   ]);
   for (const [source, result] of [
     ["portfolio_accounts", accounts],
@@ -696,7 +760,17 @@ export async function portfolioOverview() {
       unit_price: Number(x.unit_price),
       fee: Number(x.fee),
     })) as unknown as PortfolioTransactionView[],
-    prices:Object.fromEntries((prices.data??[]).map(x=>[(x.indicators as unknown as {code:string}).code.replace("_USD",""),Number(x.value)]).filter((x,i,a)=>a.findIndex(y=>y[0]===x[0])===i)),
+    prices: Object.fromEntries(
+      (prices.data ?? [])
+        .map((x) => [
+          (x.indicators as unknown as { code: string }).code.replace(
+            "_USD",
+            "",
+          ),
+          Number(x.value),
+        ])
+        .filter((x, i, a) => a.findIndex((y) => y[0] === x[0]) === i),
+    ),
   };
 }
 export async function createPortfolioAccount(input: {
@@ -887,6 +961,7 @@ export async function allocationWorkspace(): Promise<AllocationWorkspace> {
       paper: null,
       readiness: null,
       signoffs: [],
+      snapshot: null,
     };
   const [
     mandate,
@@ -898,6 +973,7 @@ export async function allocationWorkspace(): Promise<AllocationWorkspace> {
     paper,
     readiness,
     signoffs,
+    snapshot,
   ] = await Promise.all([
     client.from("current_investor_mandate").select("*").maybeSingle(),
     client
@@ -944,6 +1020,12 @@ export async function allocationWorkspace(): Promise<AllocationWorkspace> {
       .select("*")
       .order("created_at", { ascending: false })
       .limit(20),
+    client
+      .from("portfolio_snapshots")
+      .select("*")
+      .order("snapshot_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   return {
     mandate: mandate.data as InvestorMandateView | null,
@@ -955,6 +1037,7 @@ export async function allocationWorkspace(): Promise<AllocationWorkspace> {
     paper: paper.data,
     readiness: readiness.data,
     signoffs: signoffs.data ?? [],
+    snapshot: snapshot.data,
   };
 }
 async function ownedUser(client: Awaited<ReturnType<typeof database>>) {
@@ -1097,7 +1180,9 @@ export async function signoffRecommendation(input: {
     throw new Error("Ongeldige sign-off");
   const { data: r } = await client!
     .from("allocation_recommendations")
-    .select("id")
+    .select(
+      "id,mandate_id,target_ranges,investor_mandates(minimum_cash_percent,maximum_asset_weight_percent,allowed_assets)",
+    )
     .eq("id", input.recommendationId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -1109,6 +1194,54 @@ export async function signoffRecommendation(input: {
     } catch {
       throw new Error("MODIFY vereist geldige target-JSON");
     }
+    const mandate = r.investor_mandates as unknown as {
+        minimum_cash_percent: number;
+        maximum_asset_weight_percent: number;
+        allowed_assets: string[];
+      },
+      changes = modifiedTargets as Record<
+        string,
+        { minimum?: number; maximum?: number }
+      >,
+      allowed = new Set(["BTC", "ETH"]),
+      entries = Object.entries(changes);
+    if (
+      !entries.length ||
+      entries.some(
+        ([asset, x]) =>
+          !allowed.has(asset) ||
+          !mandate.allowed_assets.includes(asset) ||
+          !Number.isFinite(Number(x.minimum)) ||
+          !Number.isFinite(Number(x.maximum)) ||
+          Number(x.minimum) < 0 ||
+          Number(x.maximum) < Number(x.minimum) ||
+          Number(x.maximum) > Number(mandate.maximum_asset_weight_percent),
+      )
+    )
+      throw new Error("Gewijzigde ranges overtreden het mandaat");
+    const original = r.target_ranges as Record<
+        string,
+        { minimum: number; maximum: number; midpoint: number }
+      >,
+      merged = Object.fromEntries(
+        Object.entries(original)
+          .filter(([asset]) => asset !== "CASH")
+          .map(([asset, range]) => [asset, changes[asset] ?? range]),
+      ) as Record<string, { minimum?: number; maximum?: number }>;
+    const riskyMinimum = Object.values(merged).reduce(
+        (sum, range) => sum + Number(range.minimum),
+        0,
+      ),
+      riskyMidpoint = Object.values(merged).reduce(
+        (sum, range) =>
+          sum + (Number(range.minimum) + Number(range.maximum)) / 2,
+        0,
+      );
+    if (
+      riskyMinimum > 100 - Number(mandate.minimum_cash_percent) ||
+      riskyMidpoint > 100 - Number(mandate.minimum_cash_percent)
+    )
+      throw new Error("Gewijzigde ranges overtreden de cashvloer");
   }
   const { error } = await client!.from("analyst_signoffs").insert({
     user_id: user.id,
@@ -1318,16 +1451,14 @@ export async function addReadOnlyConnector(input: {
     .eq("user_id", user.id)
     .maybeSingle();
   if (!account) throw new Error("Account niet gevonden");
-  const result = await client!
-    .from("read_only_connectors")
-    .insert({
-      user_id: user.id,
-      account_id: account.id,
-      provider: input.provider.trim(),
-      credential_reference: input.credentialReference.trim(),
-      permissions: { read: true, trade: false, withdraw: false },
-      status: "DISABLED",
-    });
+  const result = await client!.from("read_only_connectors").insert({
+    user_id: user.id,
+    account_id: account.id,
+    provider: input.provider.trim(),
+    credential_reference: input.credentialReference.trim(),
+    permissions: { read: true, trade: false, withdraw: false },
+    status: "DISABLED",
+  });
   if (result.error) throw result.error;
 }
 export async function addThesisEvidence(input: {
@@ -1352,17 +1483,212 @@ export async function addThesisEvidence(input: {
   } catch {
     fact = { observation: input.fact.trim() };
   }
-  const result = await client!
-    .from("thesis_evidence")
-    .insert({
-      user_id: user.id,
-      thesis_id: input.thesisId,
-      observed_at: new Date().toISOString(),
-      classification: input.classification,
-      fact,
-      source_url: input.sourceUrl.trim() || null,
-    });
+  const result = await client!.from("thesis_evidence").insert({
+    user_id: user.id,
+    thesis_id: input.thesisId,
+    observed_at: new Date().toISOString(),
+    classification: input.classification,
+    fact,
+    source_url: input.sourceUrl.trim() || null,
+  });
   if (result.error) throw result.error;
+}
+
+export async function productExperience() {
+  const client = await database();
+  if (!client) return null;
+  const { data } = await client
+    .from("user_product_settings")
+    .select("*")
+    .maybeSingle();
+  return data;
+}
+export async function completeGuidedOnboarding(input: {
+  experience: string;
+  baseCurrency: string;
+  objective: string;
+  horizon: number;
+  maxDrawdown: number;
+  minCash: number;
+  maxAsset: number;
+  turnover: number;
+  cadence: string;
+  assets: string[];
+  startingCapital: number;
+}) {
+  const client = await database();
+  await ownedUser(client);
+  const { error } = await client!.rpc("complete_guided_onboarding", {
+    p_experience: input.experience,
+    p_base_currency: input.baseCurrency,
+    p_objective: input.objective,
+    p_horizon: input.horizon,
+    p_max_drawdown: input.maxDrawdown,
+    p_min_cash: input.minCash,
+    p_max_asset: input.maxAsset,
+    p_turnover: input.turnover,
+    p_cadence: input.cadence,
+    p_assets: input.assets,
+    p_starting_capital: input.startingCapital,
+  });
+  if (error) throw error;
+}
+export async function todayWorkspace() {
+  const client = await database();
+  if (!client)
+    return {
+      settings: null,
+      mandate: null,
+      recommendation: null,
+      signoff: null,
+      events: [],
+      theses: [],
+      paper: null,
+    };
+  const [settings, mandate, recommendation, events, theses, paper] =
+    await Promise.all([
+      client.from("user_product_settings").select("*").maybeSingle(),
+      client.from("current_investor_mandate").select("*").maybeSingle(),
+      client
+        .from("allocation_recommendations")
+        .select("*")
+        .order("calculated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("data_quality_events")
+        .select("id,severity,event_type,details,created_at")
+        .is("resolved_at", null)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      client
+        .from("asset_theses")
+        .select("id,review_on,status,assets(symbol)")
+        .eq("status", "ACTIVE")
+        .order("review_on"),
+      client
+        .from("paper_nav")
+        .select("nav,calculated_at,paper_portfolios!inner(user_id)")
+        .order("calculated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+  let signoff = null;
+  if (recommendation.data) {
+    const result = await client
+      .from("analyst_signoffs")
+      .select("*")
+      .eq("recommendation_id", recommendation.data.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    signoff = result.data;
+  }
+  return {
+    settings: settings.data,
+    mandate: mandate.data,
+    recommendation: recommendation.data,
+    signoff,
+    events: events.data ?? [],
+    theses: theses.data ?? [],
+    paper: paper.data,
+  };
+}
+export async function paperWorkspace() {
+  const client = await database();
+  if (!client)
+    return {
+      portfolio: null,
+      nav: [],
+      trades: [],
+      reports: [],
+      analytics: null,
+    };
+  const { data: portfolio } = await client
+    .from("paper_portfolios")
+    .select("*")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!portfolio)
+    return {
+      portfolio: null,
+      nav: [],
+      trades: [],
+      reports: [],
+      analytics: null,
+    };
+  const [nav, trades, reports, analytics] = await Promise.all([
+    client
+      .from("paper_nav")
+      .select("*")
+      .eq("paper_portfolio_id", portfolio.id)
+      .order("calculated_at"),
+    client
+      .from("paper_trades")
+      .select(
+        "*,allocation_recommendations(calculated_at,target_ranges,warnings,analyst_signoffs(action,rationale,created_at))",
+      )
+      .eq("paper_portfolio_id", portfolio.id)
+      .order("executed_at", { ascending: false }),
+    client
+      .from("monthly_validation_reports")
+      .select("*")
+      .order("report_month", { ascending: false }),
+    client
+      .from("performance_analytics")
+      .select("*")
+      .eq("paper_portfolio_id", portfolio.id)
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  return {
+    portfolio,
+    nav: nav.data ?? [],
+    trades: trades.data ?? [],
+    reports: reports.data ?? [],
+    analytics: analytics.data,
+  };
+}
+export async function paperTradeAudit(id: string) {
+  const client = await database();
+  if (!client) return null;
+  const { data } = await client
+    .from("paper_trades")
+    .select(
+      "*,paper_portfolios(*),allocation_recommendations(*,analyst_signoffs(*))",
+    )
+    .eq("id", id)
+    .maybeSingle();
+  return data;
+}
+export async function validationLearningWorkspace() {
+  const client = await database();
+  if (!client) return { reports: [], outcomes: [], analytics: [] };
+  const [reports, outcomes, analytics] = await Promise.all([
+    client
+      .from("monthly_validation_reports")
+      .select("*")
+      .order("report_month", { ascending: false }),
+    client
+      .from("recommendation_outcomes")
+      .select(
+        "*,allocation_recommendations(calculated_at,status,analyst_signoffs(action))",
+      )
+      .order("observed_at", { ascending: false })
+      .limit(500),
+    client
+      .from("performance_analytics")
+      .select("*")
+      .order("calculated_at", { ascending: false })
+      .limit(24),
+  ]);
+  return {
+    reports: reports.data ?? [],
+    outcomes: outcomes.data ?? [],
+    analytics: analytics.data ?? [],
+  };
 }
 export async function dashboardHistory() {
   const client = await database();

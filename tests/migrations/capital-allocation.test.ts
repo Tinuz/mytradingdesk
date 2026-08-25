@@ -9,7 +9,9 @@ describe("capital allocation migrations", () => {
     cash = read("202608250028_cash_rate_contract.sql"),
     source = read("202608250031_source_gate_contract_fix.sql"),
     completion = read("202608250030_capital_allocation_completion.sql"),
-    expansion = read("202608250032_l1_relative_framework.sql");
+    expansion = read("202608250032_l1_relative_framework.sql"),
+    experience = read("202608250033_product_experience_validation.sql"),
+    onboarding = read("202608250034_onboarding_hardening.sql");
   it("persists immutable versioned recommendations", () => {
     expect(allocation).toContain("allocation_recommendations");
     expect(allocation).toContain("allocation_recommendations_immutable");
@@ -43,5 +45,19 @@ describe("capital allocation migrations", () => {
     expect(expansion).toContain("analyst_conviction");
     expect(expansion).toContain("data_confidence");
     expect(expansion).toContain("model_evidence_status");
+  });
+  it("adds an immutable prospective learning layer", () => {
+    expect(experience).toContain("recommendation_outcomes");
+    expect(experience).toContain("monthly_validation_reports");
+    expect(experience).toContain("recommendation_outcomes_immutable");
+    expect(experience).toContain("connector_sync_runs");
+  });
+  it("creates onboarding state atomically with hard mandate boundaries", () => {
+    expect(onboarding).toContain("complete_guided_onboarding");
+    expect(onboarding).toContain(
+      "p_starting_capital not between 1000 and 100000000",
+    );
+    expect(onboarding).toContain("p_min_cash not between 0 and 99");
+    expect(onboarding).toContain("p_assets <@");
   });
 });

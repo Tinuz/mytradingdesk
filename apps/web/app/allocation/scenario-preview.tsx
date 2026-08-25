@@ -1,2 +1,56 @@
-"use client";import {useState} from "react";
-export function ScenarioPreview(){const [capital,setCapital]=useState(100000),[btc,setBtc]=useState(30),[eth,setEth]=useState(20),[btcMove,setBtcMove]=useState(-40),[ethMove,setEthMove]=useState(-55),[cost,setCost]=useState(15),cash=100-btc-eth,result=capital*(1+btc/100*btcMove/100+eth/100*ethMove/100)-capital*(btc+eth)/100*cost/10000;return <section className="panel"><div className="panel-head"><div><span className="overline">Interactive sensitivity</span><h2>Portfolio scenario preview</h2></div><strong>{result.toLocaleString("nl-NL",{maximumFractionDigits:0})}</strong></div><div className="horizon-grid">{[["Kapitaal",capital,setCapital,1000,10000000],["BTC gewicht %",btc,setBtc,0,100],["ETH gewicht %",eth,setEth,0,100],["BTC scenario %",btcMove,setBtcMove,-100,300],["ETH scenario %",ethMove,setEthMove,-100,300],["Kosten bps",cost,setCost,0,500]].map(([label,value,set,min,max])=><label key={String(label)}>{String(label)}<input type="number" value={Number(value)} min={Number(min)} max={Number(max)} onChange={e=>(set as (n:number)=>void)(Number(e.target.value))}/></label>)}</div><p>Cash {cash}% · scenarioresultaat {((result/capital-1)*100).toFixed(1)}%. Deze preview is lokaal, hypothetisch en overschrijft geen recommendation.</p></section>}
+"use client";
+import { useState } from "react";
+export function ScenarioPreview() {
+  const [capital, setCapital] = useState(100000),
+    [btc, setBtc] = useState(30),
+    [eth, setEth] = useState(20),
+    [btcMove, setBtcMove] = useState(-40),
+    [ethMove, setEthMove] = useState(-55),
+    [cost, setCost] = useState(15),
+    cash = 100 - btc - eth,
+    result =
+      capital *
+        (1 + ((btc / 100) * btcMove) / 100 + ((eth / 100) * ethMove) / 100) -
+      (((capital * (btc + eth)) / 100) * cost) / 10000;
+  return (
+    <section className="panel advanced-only">
+      <div className="panel-head">
+        <div>
+          <span className="overline">Interactive sensitivity</span>
+          <h2>Portfolio scenario preview</h2>
+        </div>
+        <strong>
+          {result.toLocaleString("nl-NL", { maximumFractionDigits: 0 })}
+        </strong>
+      </div>
+      <div className="horizon-grid">
+        {[
+          ["Kapitaal", capital, setCapital, 1000, 10000000],
+          ["BTC gewicht %", btc, setBtc, 0, 100],
+          ["ETH gewicht %", eth, setEth, 0, 100],
+          ["BTC scenario %", btcMove, setBtcMove, -100, 300],
+          ["ETH scenario %", ethMove, setEthMove, -100, 300],
+          ["Kosten bps", cost, setCost, 0, 500],
+        ].map(([label, value, set, min, max]) => (
+          <label key={String(label)}>
+            {String(label)}
+            <input
+              type="number"
+              value={Number(value)}
+              min={Number(min)}
+              max={Number(max)}
+              onChange={(e) =>
+                (set as (n: number) => void)(Number(e.target.value))
+              }
+            />
+          </label>
+        ))}
+      </div>
+      <p>
+        Cash {cash}% · scenarioresultaat{" "}
+        {((result / capital - 1) * 100).toFixed(1)}%. Deze preview is lokaal,
+        hypothetisch en overschrijft geen recommendation.
+      </p>
+    </section>
+  );
+}

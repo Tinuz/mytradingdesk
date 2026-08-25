@@ -105,23 +105,74 @@ for (const user of users.users) {
     .maybeSingle();
   let executed = false;
   if (recommendation) {
+    // The most recent human decision is authoritative. Never fall back to an
+    // older approval after a later REJECT or DEFER.
     const { data: approval } = await c
       .from("analyst_signoffs")
-      .select("id")
+      .select("id,action,modified_targets,created_at")
       .eq("recommendation_id", recommendation.id)
-      .eq("action", "APPROVE")
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (approval) {
-      const targets = recommendation.target_ranges as Record<
-        string,
-        { midpoint: number }
-      >;
-      for (const asset of ["BTC", "ETH"] as const) {
-        const current = positions[asset] * prices[asset],
-          target = (nav * (targets[asset]?.midpoint ?? 0)) / 100,
-          delta = target - current;
+    if (approval && ["APPROVE", "MODIFY"].includes(approval.action)) {
+      const { data: existingTrades, error: existingTradesError } = await c
+        .from("paper_trades")
+        .select("asset")
+        .eq("paper_portfolio_id", paper.id)
+        .eq("recommendation_id", recommendation.id);
+      if (existingTradesError) throw existingTradesError;
+      const alreadyExecuted = new Set(
+        (existingTrades ?? []).map((trade) => String(trade.asset)),
+      );
+      const original = recommendation.target_ranges as Record<
+          string,
+          { minimum: number; maximum: number; midpoint: number }
+        >,
+        modified = (approval.modified_targets ?? {}) as Record<
+          string,
+          { minimum: number; maximum: number; midpoint?: number }
+        >,
+        targets = Object.fromEntries(
+          Object.entries(original).map(([asset, target]) => {
+            const change = modified[asset];
+            return [
+              asset,
+              change
+                ? {
+                    ...change,
+                    midpoint:
+                      change.midpoint ??
+                      (Number(change.minimum) + Number(change.maximum)) / 2,
+                  }
+                : target,
+            ];
+          }),
+        ) as Record<string, { midpoint: number }>;
+      const planned = (["BTC", "ETH"] as const)
+        .filter((asset) => !alreadyExecuted.has(asset))
+        .map((asset) => {
+          const current = positions[asset] * prices[asset];
+          return {
+            asset,
+            delta: (nav * (targets[asset]?.midpoint ?? 0)) / 100 - current,
+          };
+        })
+        // Sales fund purchases; deterministic secondary order keeps reruns
+        // reproducible when both deltas have the same sign.
+        .sort((a, b) => a.delta - b.delta || a.asset.localeCompare(b.asset));
+      for (const plan of planned) {
+        const { asset } = plan;
+        // A recommendation is applied once per asset. This check occurs before
+        // any in-memory balance mutation, keeping reruns idempotent.
+        let delta = plan.delta;
         if (Math.abs(delta) < nav * 0.01) continue;
+        if (delta > 0) {
+          const targetCash = (nav * Number(targets.CASH?.midpoint ?? 0)) / 100,
+            availableForTrade = Math.max(0, cash - targetCash),
+            maximumPurchase = availableForTrade / 1.0015;
+          delta = Math.min(delta, maximumPurchase);
+          if (delta < nav * 0.01) continue;
+        }
         const fee = Math.abs(delta) * 0.001,
           slippage = Math.abs(delta) * 0.0005,
           quantity = Math.abs(delta) / prices[asset];
@@ -141,7 +192,10 @@ for (const user of users.users) {
             fee,
             slippage,
             executed_at: at.toISOString(),
-            execution_rule: "APPROVED_TARGET_RANGE_MIDPOINT",
+            execution_rule:
+              approval.action === "MODIFY"
+                ? "HUMAN_MODIFIED_RANGE_MIDPOINT"
+                : "APPROVED_TARGET_RANGE_MIDPOINT",
           },
           {
             onConflict: "paper_portfolio_id,recommendation_id,asset",

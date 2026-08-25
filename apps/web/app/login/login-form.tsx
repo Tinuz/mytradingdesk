@@ -44,7 +44,7 @@ export function LoginForm() {
         return;
       }
       setMessage("Inloggen gelukt.");
-      router.replace("/dashboard");
+      router.replace("/today");
       router.refresh();
     } catch {
       setMessage(

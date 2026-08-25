@@ -392,3 +392,21 @@ All executable Capital Allocation V1 backlog capabilities are implemented. “Im
 | CAS-083 | Explicit execution subsystem decision boundary | OUT OF SCOPE by product decision |
 
 Official ICE DXY/NYICDX remains a licensed external dependency, not unfinished application code. The app uses the separately named ECB-derived hypothesis and refuses to relabel it as official DXY.
+
+## Product validation experience — implemented 2026-08-25
+
+The usability priorities for a 6–12 month prospective paper test are now implemented:
+
+- [x] Guided five-step onboarding creates the experience mode, immutable mandate, cash ledger and paper portfolio atomically.
+- [x] A simplified **Vandaag** route presents one prioritized next action and the complete mandate → model → human decision → paper-result lifecycle.
+- [x] Guided and advanced views separate decision support from technical research detail; all authenticated routes are protected centrally.
+- [x] The allocation review compares current weights with target bands and explains whether exposure is below, inside or above the band.
+- [x] Human APPROVE, MODIFY, REJECT and DEFER decisions remain separate from the immutable model output; guided MODIFY uses normal percentage fields.
+- [x] The paper experience exposes positions, NAV, benchmarks, fills, fees, slippage and a per-trade audit trail, with useful empty states.
+- [x] Review work is prioritized by integrity incident, blocked recommendation, overdue thesis and unsigned recommendation.
+- [x] Outcome records cover 1/7/30/90/180-day horizons and monthly immutable validation reports expose sample size, operations and override outcomes.
+- [x] Notifications can be limited to actionable events; marking read affects only the visible actionable subset in that mode.
+- [x] A thesis/scenario workbench, calibration view and least-privilege read-only connector importer support advanced validation work.
+- [x] Paper execution is idempotent and follows only the latest human sign-off; a later REJECT or DEFER invalidates an older approval.
+
+Deliberately time-gated rather than unfinished: evidence promotion still requires prospective observations, ≥6 months of paper history and the capital-readiness criteria in CAS-066. Additional assets remain excluded until BTC/ETH/cash have passed that proof period.

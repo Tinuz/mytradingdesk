@@ -71,6 +71,64 @@ export default async function ReviewsPage() {
           </strong>
         </div>
       </header>
+      <section className="panel">
+        <div className="panel-head">
+          <div>
+            <span className="overline">Gesorteerd op impact</span>
+            <h2>Prioriteit</h2>
+          </div>
+        </div>
+        {(q.events as Event[])
+          .filter((x) => ["CRITICAL", "HIGH"].includes(x.severity))
+          .map((x) => (
+            <article className="journal-entry" key={`p1-${x.id}`}>
+              <div>
+                <span className="action-priority">1</span>
+                <strong>Data- of operationele freeze</strong>
+              </div>
+              <p>
+                {x.event_type} · eerst oplossen; nieuwe exposure is geblokkeerd
+              </p>
+            </article>
+          ))}
+        {(q.recommendations as Recommendation[])
+          .filter((x) => x.status !== "AVAILABLE")
+          .slice(0, 1)
+          .map((x) => (
+            <article className="journal-entry" key={`p2-${x.id}`}>
+              <div>
+                <span className="action-priority">2</span>
+                <strong>Geblokkeerde allocatie</strong>
+              </div>
+              <p>{x.status} · inspecteer constraint en bronwaarschuwingen</p>
+            </article>
+          ))}
+        {(q.theses as Thesis[]).map((x) => (
+          <article className="journal-entry" key={`p3-${x.id}`}>
+            <div>
+              <span className="action-priority">3</span>
+              <strong>Verlopen thesisreview · {x.assets?.symbol}</strong>
+            </div>
+            <p>Reviewdatum {x.review_on}</p>
+          </article>
+        ))}
+        {(q.recommendations as Recommendation[])
+          .filter(
+            (x) => x.status === "AVAILABLE" && !x.analyst_signoffs?.length,
+          )
+          .slice(0, 1)
+          .map((x) => (
+            <article className="journal-entry" key={`p4-${x.id}`}>
+              <div>
+                <span className="action-priority">4</span>
+                <strong>Nieuwe beslissing wacht op jou</strong>
+              </div>
+              <p>
+                Approve, modify, reject of defer; nooit automatische uitvoering
+              </p>
+            </article>
+          ))}
+      </section>
       <section className="journal-grid">
         <section className="panel">
           <div className="panel-head">

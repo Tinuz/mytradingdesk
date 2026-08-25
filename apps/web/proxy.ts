@@ -14,15 +14,37 @@ export async function proxy(request: NextRequest) {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(cookies) {
-        for (const cookie of cookies) request.cookies.set(cookie.name, cookie.value);
+        for (const cookie of cookies)
+          request.cookies.set(cookie.name, cookie.value);
         response = NextResponse.next({ request });
-        for (const cookie of cookies) response.cookies.set(cookie.name, cookie.value, cookie.options);
-      }
-    }
+        for (const cookie of cookies)
+          response.cookies.set(cookie.name, cookie.value, cookie.options);
+      },
+    },
   });
   const { data } = await supabase.auth.getUser();
   if (!data.user) return NextResponse.redirect(new URL("/login", request.url));
   return response;
 }
 
-export const config = { matcher: ["/dashboard/:path*", "/assets/:path*", "/research/:path*", "/history/:path*"] };
+export const config = {
+  matcher: [
+    "/today/:path*",
+    "/onboarding/:path*",
+    "/dashboard/:path*",
+    "/assets/:path*",
+    "/research/:path*",
+    "/history/:path*",
+    "/allocation/:path*",
+    "/portfolio/:path*",
+    "/paper/:path*",
+    "/reviews/:path*",
+    "/workbench/:path*",
+    "/journal/:path*",
+    "/mandate/:path*",
+    "/validation/:path*",
+    "/notifications/:path*",
+    "/governance/:path*",
+    "/universe/:path*",
+  ],
+};

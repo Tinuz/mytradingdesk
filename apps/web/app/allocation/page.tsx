@@ -39,11 +39,28 @@ export default async function AllocationPage() {
   }
   async function signoff(f: FormData) {
     "use server";
+    const rawTargets = String(f.get("modified_targets") ?? "").trim();
+    const allowedAssets = new Set(
+      ((w.mandate?.allowed_assets ?? ["BTC", "ETH"]) as string[]).filter(
+        (asset) => ["BTC", "ETH"].includes(asset),
+      ),
+    );
+    const guidedTargets = Object.fromEntries(
+      ["BTC", "ETH"]
+        .filter((asset) => allowedAssets.has(asset))
+        .map((asset) => [
+          asset,
+          {
+            minimum: Number(f.get(`${asset.toLowerCase()}_minimum`)),
+            maximum: Number(f.get(`${asset.toLowerCase()}_maximum`)),
+          },
+        ]),
+    );
     await signoffRecommendation({
       recommendationId: String(f.get("recommendation_id")),
       action: String(f.get("action")),
       rationale: String(f.get("rationale")),
-      modifiedTargets: String(f.get("modified_targets") ?? ""),
+      modifiedTargets: rawTargets || JSON.stringify(guidedTargets),
       reviewOn: String(f.get("review_on") ?? ""),
     });
     revalidatePath("/allocation");
@@ -53,6 +70,27 @@ export default async function AllocationPage() {
       string,
       { minimum: number; maximum: number; midpoint: number }
     >,
+    snapshot = w.snapshot as {
+      positions?: Record<string, { value?: number }>;
+      total_value?: number;
+    } | null,
+    snapshotTotal = Number(snapshot?.total_value ?? 0),
+    currentWeights = Object.fromEntries(
+      ["BTC", "ETH", "CASH"].map((asset) => [
+        asset,
+        snapshotTotal > 0
+          ? (Number(snapshot?.positions?.[asset]?.value ?? 0) / snapshotTotal) *
+            100
+          : null,
+      ]),
+    ) as Record<string, number | null>,
+    latestSignoff = (
+      w.signoffs as Array<{
+        recommendation_id?: string;
+        action?: string;
+        rationale?: string;
+      }>
+    ).find((signoff) => signoff.recommendation_id === r?.id),
     scenarioRows =
       (w.scenarios as Array<{
         id: string;
@@ -88,6 +126,34 @@ export default async function AllocationPage() {
           </span>
         </div>
       </header>
+      <section
+        className={`next-action ${!r || r.status !== "AVAILABLE" ? "warning" : ""}`}
+      >
+        <div>
+          <span className="overline">Wat vraagt dit van jou?</span>
+          <h2>
+            {!r
+              ? "Wacht op de eerste modelcyclus"
+              : r.status === "AVAILABLE"
+                ? "Beoordeel een mogelijke paperwijziging"
+                : r.status === "FROZEN"
+                  ? "Verhoog exposure niet"
+                  : "Geen geldige doelverdeling"}
+          </h2>
+          <p>
+            {!r
+              ? "Zonder recommendation is er niets te beoordelen."
+              : r.status === "AVAILABLE"
+                ? "Vergelijk je huidige positie met de targetrange, lees scenarioverlies en invalidators en kies daarna zelf Approve, Modify, Reject of Defer."
+                : "De app vraagt geen nieuwe exposure zolang een bron, thesis, waardering, operationele controle of mandaatconstraint blokkeert."}
+          </p>
+        </div>
+        {r?.status === "AVAILABLE" && (
+          <a className="primary-action" href="#human-review">
+            Start beoordeling
+          </a>
+        )}
+      </section>
       {!w.mandate && (
         <section className="trust-banner stale">
           <strong>BLOCKED</strong>
@@ -105,22 +171,40 @@ export default async function AllocationPage() {
         <div className="horizon-grid">
           {["BTC", "ETH", "CASH"].map((x) => (
             <div key={x}>
-              <small>{x} target range</small>
+              <small>{x} huidige positie → doelband</small>
               <strong>
-                {targets[x]
-                  ? `${targets[x].minimum}%–${targets[x].maximum}%`
-                  : "—"}
+                {targets[x] && currentWeights[x] !== null
+                  ? `${currentWeights[x]!.toFixed(1)}% → ${targets[x].minimum}%–${targets[x].maximum}%`
+                  : targets[x]
+                    ? `${targets[x].minimum}%–${targets[x].maximum}%`
+                    : "—"}
               </strong>
               <span>
                 {targets[x]
-                  ? `midpoint ${targets[x].midpoint}%`
+                  ? currentWeights[x] === null
+                    ? `doelpunt ${targets[x].midpoint}% · huidige positie ontbreekt`
+                    : currentWeights[x]! < targets[x].minimum
+                      ? "onder de doelband · mogelijke verhoging beoordelen"
+                      : currentWeights[x]! > targets[x].maximum
+                        ? "boven de doelband · risicoverlaging beoordelen"
+                        : "binnen de doelband · geen aanpassing nodig"
                   : "Geen output"}
               </span>
             </div>
           ))}
         </div>
+        {r && latestSignoff && (
+          <div className="trust-banner">
+            <strong>Laatst vastgelegd: {latestSignoff.action}</strong>
+            <span>{latestSignoff.rationale}</span>
+          </div>
+        )}
         {r && (
-          <form action={signoff} className="journal-form mandate-benchmarks">
+          <form
+            id="human-review"
+            action={signoff}
+            className="journal-form mandate-benchmarks"
+          >
             <input
               type="hidden"
               name="recommendation_id"
@@ -137,10 +221,49 @@ export default async function AllocationPage() {
             </label>
             <label>
               Rationale
-              <textarea name="rationale" minLength={10} required />
+              <textarea
+                name="rationale"
+                minLength={10}
+                required
+                placeholder="Welke feiten, risico's en grenzen bepalen je keuze?"
+              />
             </label>
-            <label>
-              Gewijzigde targets (alleen MODIFY, JSON)
+            <fieldset>
+              <legend>Eigen doelbanden (alleen gebruikt bij MODIFY)</legend>
+              {(["BTC", "ETH"] as const).map((asset) => (
+                <div className="range-inputs" key={asset}>
+                  <strong>{asset}</strong>
+                  <label>
+                    Minimum %
+                    <input
+                      name={`${asset.toLowerCase()}_minimum`}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      defaultValue={targets[asset]?.minimum ?? 0}
+                    />
+                  </label>
+                  <label>
+                    Maximum %
+                    <input
+                      name={`${asset.toLowerCase()}_maximum`}
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      defaultValue={targets[asset]?.maximum ?? 0}
+                    />
+                  </label>
+                </div>
+              ))}
+              <small>
+                De cashvloer en maximumweging uit je mandaat worden bij opslaan
+                opnieuw gecontroleerd.
+              </small>
+            </fieldset>
+            <label className="advanced-only">
+              Geavanceerde target-override (JSON, optioneel)
               <textarea
                 name="modified_targets"
                 placeholder='{"BTC":{"minimum":20,"maximum":30}}'
@@ -241,7 +364,7 @@ export default async function AllocationPage() {
           </span>
         </section>
       )}
-      <section className="journal-grid">
+      <section className="journal-grid advanced-only">
         <form action={thesis} className="panel journal-form">
           <div className="panel-head">
             <div>
