@@ -11,7 +11,8 @@ describe("capital allocation migrations", () => {
     completion = read("202608250030_capital_allocation_completion.sql"),
     expansion = read("202608250032_l1_relative_framework.sql"),
     experience = read("202608250033_product_experience_validation.sql"),
-    onboarding = read("202608250034_onboarding_hardening.sql");
+    onboarding = read("202608250034_onboarding_hardening.sql"),
+    onboardingRls = read("202608250035_onboarding_paper_portfolio_rls.sql");
   it("persists immutable versioned recommendations", () => {
     expect(allocation).toContain("allocation_recommendations");
     expect(allocation).toContain("allocation_recommendations_immutable");
@@ -59,5 +60,7 @@ describe("capital allocation migrations", () => {
     );
     expect(onboarding).toContain("p_min_cash not between 0 and 99");
     expect(onboarding).toContain("p_assets <@");
+    expect(onboardingRls).toContain("for insert");
+    expect(onboardingRls).toContain("auth.uid()) = user_id");
   });
 });

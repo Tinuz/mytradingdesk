@@ -1,12 +1,17 @@
 "use client";
-import { useRef, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 export function OnboardingWizard({
   action,
 }: {
-  action: (data: FormData) => void;
+  action: (data: FormData) => Promise<{ error: string } | undefined>;
 }) {
   const [step, setStep] = useState(0),
     [error, setError] = useState(""),
+    [serverState, formAction, pending] = useActionState(
+      (_previous: { error: string } | undefined, data: FormData) =>
+        action(data),
+      undefined,
+    ),
     formRef = useRef<HTMLFormElement>(null),
     steps = [
       "Welkom",
@@ -38,7 +43,7 @@ export function OnboardingWizard({
     setStep((s) => s + 1);
   }
   return (
-    <form ref={formRef} action={action} className="panel wizard-shell">
+    <form ref={formRef} action={formAction} className="panel wizard-shell">
       <div
         className="wizard-progress"
         aria-label={`Stap ${step + 1} van ${steps.length}`}
@@ -189,13 +194,18 @@ export function OnboardingWizard({
             <span>Evalueer maandelijks resultaat en proceskwaliteit</span>
           </div>
         </div>
-        <button className="primary-action" type="submit">
-          Configuratie opslaan en beginnen
+        <button className="primary-action" type="submit" disabled={pending}>
+          {pending ? "Veilig opslaan…" : "Configuratie opslaan en beginnen"}
         </button>
       </section>
       {error && (
         <p className="validation-warning" role="alert" aria-live="polite">
           {error}
+        </p>
+      )}
+      {serverState?.error && (
+        <p className="validation-warning" role="alert" aria-live="assertive">
+          {serverState.error}
         </p>
       )}
       {step < 4 && (
