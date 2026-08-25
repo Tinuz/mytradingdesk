@@ -1,3 +1,65 @@
 import Link from "next/link";
 import { Mark } from "./icons";
-export function Shell({children,current}:{children:React.ReactNode;current:"dashboard"|"portfolio"|"history"|"journal"|"research"|"notifications"|"validation"|"mandate"}){const nav=[['dashboard','Overzicht','/dashboard'],['portfolio','Portfolio','/portfolio'],['history','Historie','/history'],['journal','Journal','/journal'],['mandate','Mandaat','/mandate'],['validation','Validatie','/validation'],['notifications','Meldingen','/notifications'],['research','Data health','/research']] as const;return <div className="terminal-shell"><aside className="sidebar"><Link href="/dashboard" className="brand"><Mark/><span>CMI<em>Terminal</em></span></Link><nav aria-label="Hoofdnavigatie">{nav.map(([key,label,href])=><Link key={key} href={href} className={current===key?'active':''}>{label}</Link>)}</nav><div className="sidebar-foot"><span className="live-dot"/> Shadow allocation<br/><small>decision support only</small></div></aside><main className="terminal-main">{children}</main></div>}
+export function Shell({
+  children,
+  current,
+}: {
+  children: React.ReactNode;
+  current:
+    | "dashboard"
+    | "allocation"
+    | "governance"
+    | "reviews"
+    | "universe"
+    | "portfolio"
+    | "history"
+    | "journal"
+    | "research"
+    | "notifications"
+    | "validation"
+    | "mandate";
+}) {
+  const nav = [
+    ["dashboard", "Overzicht", "/dashboard"],
+    ["allocation", "Allocatie", "/allocation"],
+    ["reviews", "Reviews", "/reviews"],
+    ["universe", "Universe", "/universe"],
+    ["portfolio", "Portfolio", "/portfolio"],
+    ["history", "Historie", "/history"],
+    ["journal", "Journal", "/journal"],
+    ["mandate", "Mandaat", "/mandate"],
+    ["validation", "Validatie", "/validation"],
+    ["notifications", "Meldingen", "/notifications"],
+    ["research", "Data health", "/research"],
+    ["governance", "Trust", "/governance"],
+  ] as const;
+  return (
+    <div className="terminal-shell">
+      <aside className="sidebar">
+        <Link href="/dashboard" className="brand">
+          <Mark />
+          <span>
+            CMI<em>Terminal</em>
+          </span>
+        </Link>
+        <nav aria-label="Hoofdnavigatie">
+          {nav.map(([key, label, href]) => (
+            <Link
+              key={key}
+              href={href}
+              className={current === key ? "active" : ""}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
+        <div className="sidebar-foot">
+          <span className="live-dot" /> Shadow allocation
+          <br />
+          <small>decision support only</small>
+        </div>
+      </aside>
+      <main className="terminal-main">{children}</main>
+    </div>
+  );
+}

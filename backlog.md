@@ -67,7 +67,7 @@ Items are ordered by dependency. P0 correctness and governance block all downstr
 
 #### CAS-002 — Versioned recommendation contract
 
-- **Status:** Domain contract implemented; persistence remains blocked until mandate, valuation, scenario and risk-policy entities exist.
+- **Status:** Implemented. Immutable persistence references the exact mandate, portfolio, decisions, valuations, scenarios, allocation policy and risk policy.
 - **Build:** Define a domain contract containing regime references, valuation snapshot, scenario set, mandate version, risk result, target range, constraints, warnings and evidence status.
 - **Acceptance:** Every displayed recommendation can be replayed byte-for-byte using stored version identifiers and point-in-time inputs.
 
@@ -84,13 +84,13 @@ Items are ordered by dependency. P0 correctness and governance block all downstr
 
 #### CAS-005 — Methodology registry and change control
 
-- **Status:** Immutable version registry deployed on 2026-08-25 for factors, valuation, scenarios, risk, allocation and benchmarks. Registration workflow and activation enforcement remain open.
+- **Status:** Implemented. Immutable registry, explicit source-review workflow and allocation-time version activation enforcement are deployed.
 - **Build:** Register factor, valuation, scenario, risk and allocation-policy versions with rationale, owner, activation time, evidence and rollback rules.
 - **Acceptance:** A model change cannot silently rewrite old recommendations or paper-portfolio history.
 
 #### CAS-006 — Source licensing and data lineage register
 
-- **Status:** Governance registry deployed on 2026-08-25. All existing providers deliberately start as `REVIEW_REQUIRED` with unknown automation/storage rights; legal/terms review and allocation fail-closed integration remain open.
+- **Status:** Implemented. The source review is immutable and acknowledgement-gated; allocation checks rights and freshness and fails closed. Providers remain `REVIEW_REQUIRED` until a real terms review is recorded.
 - **Build:** Record provider, endpoint, terms, historical-storage rights, rate limits, fallback, freshness and cost for every allocation-critical input.
 - **Acceptance:** Unapproved sources cannot feed a recommendation; critical inputs have a documented fallback or explicit fail-closed behavior.
 
@@ -106,20 +106,20 @@ Items are ordered by dependency. P0 correctness and governance block all downstr
 
 #### CAS-011 — Portfolio, cash and lot ledger
 
-- **Status:** User-owned accounts, immutable transactions, BTC/ETH/cash holdings derivation and authenticated `/portfolio` manual-entry workflow are deployed. CSV import, reconciliation and tax-lot matching remain open.
+- **Status:** Implemented. User-owned manual/CSV ledger, idempotent import, statement reconciliation and deterministic FIFO lot matching are deployed.
 - **Build:** Store accounts, assets, quantities, cash, fees, deposits/withdrawals, trades and tax lots through manual entry and CSV import first.
 - **Acceptance:** Holdings, cash, cost basis and portfolio value reconcile to imported statements within a documented tolerance.
 - **Note:** Exchange/API synchronization is a later optional adapter and must be read-only initially.
 
 #### CAS-012 — Portfolio snapshots
 
-- **Status:** Reproducible snapshot contract and `portfolio:snapshot` calculator implemented on 2026-08-25 with mandate, point-in-time price-observation and calculation-version references. Runtime completed with zero accounts; scheduling in the daily shadow cycle remains open.
+- **Status:** Implemented and scheduled in the daily shadow cycle with mandate, point-in-time price-observation and calculation-version references.
 - **Build:** Create immutable daily snapshots with positions, prices, weights, cash, cost basis and mandate reference.
 - **Acceptance:** Any historical allocation decision can be evaluated against the portfolio actually known at that time.
 
 #### CAS-013 — Benchmark definitions
 
-- **Status:** Four `benchmark-v1` definitions were frozen and deployed on 2026-08-25. BTC/cash and 200DMA performance activation remains blocked until official free FRED `DGS3MO` cash-return ingestion exists.
+- **Status:** Implemented. Four frozen benchmarks, official FRED `DGS3MO` cash accrual and point-in-time BTC 200DMA switching run in the paper engine.
 - **Build:** Add BTC buy-and-hold, BTC/cash, static BTC/ETH and 200DMA benchmarks with explicit rebalance and cash-return rules.
 - **Acceptance:** Deposits, withdrawals, fees and identical evaluation windows are handled consistently across strategy and benchmarks.
 
@@ -367,9 +367,28 @@ Items are ordered by dependency. P0 correctness and governance block all downstr
 ### Immediate next sprint
 
 - [x] CAS-001: remove/replace any UI-level overall score that mixes opportunity and stress.
-- [ ] CAS-002: domain contract is complete; implement persistence after its referenced entities exist.
+- [x] CAS-002: immutable recommendation persistence references mandate, portfolio, decisions, valuations, scenarios and policy versions.
 - [x] CAS-004: shadow allocation scope reconciled with `instructions.md`; pre-release compliance review remains gated.
 - [x] CAS-010: immutable BTC/ETH/cash mandate schema and authenticated workflow deployed.
 - [x] CAS-013: benchmark definitions frozen; implement `DGS3MO` before cash-return evaluation.
-- [ ] CAS-020/CAS-022 discovery: produce a free-first data-source matrix with licensing, history, freshness and fallback analysis.
-- [ ] CAS-060 draft: preregister evaluation metrics and kill criteria before optimizing the allocation policy.
+- [x] CAS-020/CAS-022 discovery: `data-sources.md` records the free-first source matrix, keys, rights gate, freshness and fallbacks; runtime modules lower coverage for missing inputs.
+- [x] CAS-060 draft: `cas-shadow-protocol-v1` is frozen with assets, policies, benchmarks, costs, cadence, minimum evidence and kill criteria.
+
+### Implementation closure — 2026-08-25
+
+All executable Capital Allocation V1 backlog capabilities are implemented. “Implemented” means the contract, persistence, deterministic calculation, fail-closed control and/or authenticated workflow exists; it does **not** mean a prospective validation gate has already passed.
+
+| Items | Implemented capability | Current evidence state |
+|---|---|---|
+| CAS-001–006 | Independent opportunity/stress, replayable recommendation contract, separate evidence/data/conviction fields, compliance boundary, immutable methodology registry and source-rights/freshness gate | SHADOW; sources without reviewed rights remain blocked |
+| CAS-010–014 | Immutable mandate, manual/CSV ledger, FIFO lots, statement reconciliation, daily point-in-time snapshots, four cost-consistent benchmarks and portfolio risk/concentration view | Operational; real user mandate/transactions still required |
+| CAS-020–025 | BTC on-chain and supply/demand coverage modules, ETH economics contract, cash-relative valuation, component quality scorecard and valuation/scenario workbench | Missing families lower coverage; no neutral imputation |
+| CAS-030–034 | Separate macro-cycle, rotation and derivatives modules, catalyst calendar, primary/secondary discrepancy rules and operational freeze | Partial data coverage is visible and blocks promotion |
+| CAS-040–044 | Structured versioned thesis, bull/base/bear distribution, hard-invalidator evidence freeze and independent APPROVE/MODIFY/REJECT/DEFER sign-off | Analyst inputs remain SHADOW until calibrated |
+| CAS-050–056 | Point-in-time volatility/drawdown/correlation/beta/concentration/stress metrics, mandate risk budget, deterministic target ranges, no-trade threshold, infeasibility, structured explanation and shock/source/thesis freezes | Policy is SHADOW and never executes orders |
+| CAS-060–066 | Frozen protocol, deterministic cost-aware paper fills, cash yield and four benchmarks, daily prospective NAV, performance/risk/attribution/calibration records and capital-readiness assessment | Time gate intentionally BLOCKED until ≥6 months and operational criteria pass |
+| CAS-070–074 | Allocation cockpit, per-asset packet, hypothetical portfolio scenario lab, trust panel and human review queue | Available to authenticated users with explicit warnings |
+| CAS-080–082 | Asset-admission storage/criteria, L1 relative-value methodology and secret-reference-only read-only connectors with trade/withdraw disabled | No additional asset admitted; connectors start DISABLED |
+| CAS-083 | Explicit execution subsystem decision boundary | OUT OF SCOPE by product decision |
+
+Official ICE DXY/NYICDX remains a licensed external dependency, not unfinished application code. The app uses the separately named ECB-derived hypothesis and refuses to relabel it as official DXY.

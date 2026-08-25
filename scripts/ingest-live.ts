@@ -9,6 +9,7 @@ import {
   FredGlobalLiquidityProvider,
   FredLiquidityProvider,
   FredProvider,
+  FredCashRateProvider,
   IngestionPipeline,
   SoSoValueEtfProvider,
   TwelveDataProvider,
@@ -31,9 +32,28 @@ async function main() {
   const pipeline = new IngestionPipeline(repository);
   const coinGecko = new CoinGeckoProvider(process.env.COINGECKO_API_KEY);
   const fred = new FredProvider(required("FRED_API_KEY"));
+  const cashRateProvider = new FredCashRateProvider(required("FRED_API_KEY"));
+  const cashRate = await pipeline.fetchAndIngest(
+    cashRateProvider,
+    "US_3M_TBILL_YIELD",
+  );
+  console.log(
+    JSON.stringify({
+      indicator: "US_3M_TBILL_YIELD",
+      provider: cashRateProvider.name,
+      ...cashRate,
+    }),
+  );
   const twelveData = new TwelveDataProvider(required("TWELVE_DATA_API_KEY"));
-  const eurUsdProvider=new EcbEurUsdProvider();
-  const eurUsd=await pipeline.fetchAndIngest(eurUsdProvider,"EUR_USD");console.log(JSON.stringify({indicator:"EUR_USD",provider:eurUsdProvider.name,...eurUsd}));
+  const eurUsdProvider = new EcbEurUsdProvider();
+  const eurUsd = await pipeline.fetchAndIngest(eurUsdProvider, "EUR_USD");
+  console.log(
+    JSON.stringify({
+      indicator: "EUR_USD",
+      provider: eurUsdProvider.name,
+      ...eurUsd,
+    }),
+  );
 
   for (const indicator of ["BTC_USD", "ETH_USD"] as const) {
     const result = await pipeline.fetchAndIngest(coinGecko, indicator);

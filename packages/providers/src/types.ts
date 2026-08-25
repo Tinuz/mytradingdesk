@@ -4,6 +4,7 @@ export const PHASE_ONE_INDICATORS = [
   "BTC_USD",
   "ETH_USD",
   "EUR_USD",
+  "US_3M_TBILL_YIELD",
   "DXY",
   "DXY_PROXY_ECB",
   "US_BROAD_DOLLAR_INDEX",

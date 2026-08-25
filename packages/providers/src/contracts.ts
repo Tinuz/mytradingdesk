@@ -2,7 +2,28 @@ import type { DataContract, PhaseOneIndicator } from "./types";
 
 export const DATA_CONTRACTS: Readonly<Record<PhaseOneIndicator, DataContract>> =
   {
-    EUR_USD:{indicator:"EUR_USD",unit:"usd_per_eur",minimum:0.5,maximum:2,maxPlausibleChangePercent:10,expectedIntervalSeconds:86_400,staleAfterSeconds:345_600,reconciliationTolerancePercent:1,canonicalProvider:"ecb-fx"},
+    EUR_USD: {
+      indicator: "EUR_USD",
+      unit: "usd_per_eur",
+      minimum: 0.5,
+      maximum: 2,
+      maxPlausibleChangePercent: 10,
+      expectedIntervalSeconds: 86_400,
+      staleAfterSeconds: 345_600,
+      reconciliationTolerancePercent: 1,
+      canonicalProvider: "ecb-fx",
+    },
+    US_3M_TBILL_YIELD: {
+      indicator: "US_3M_TBILL_YIELD",
+      unit: "percent",
+      minimum: -5,
+      maximum: 30,
+      maxPlausibleChangePercent: 500,
+      expectedIntervalSeconds: 86_400,
+      staleAfterSeconds: 345_600,
+      reconciliationTolerancePercent: 1,
+      canonicalProvider: "fred",
+    },
     BTC_USD: {
       indicator: "BTC_USD",
       unit: "usd",

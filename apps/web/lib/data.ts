@@ -2,6 +2,7 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { parsePortfolioCsv } from "@cmip/domain";
 
 export interface Factor {
   code: string;
@@ -204,9 +205,41 @@ export interface BenchmarkDefinitionView {
   frozen_at: string;
   notes: string;
 }
-export interface PortfolioAccountView { id:string;name:string;base_currency:"EUR"|"USD";account_type:string;created_at:string }
-export interface PortfolioHoldingView { account_id:string;symbol:"CASH"|"BTC"|"ETH";quantity:number }
-export interface PortfolioTransactionView { id:string;account_id:string;transaction_type:string;symbol:string;quantity:number;unit_price:number;fee:number;executed_at:string;notes:string|null;portfolio_accounts:{name:string}|null }
+export interface PortfolioAccountView {
+  id: string;
+  name: string;
+  base_currency: "EUR" | "USD";
+  account_type: string;
+  created_at: string;
+}
+export interface PortfolioHoldingView {
+  account_id: string;
+  symbol: "CASH" | "BTC" | "ETH";
+  quantity: number;
+}
+export interface PortfolioTransactionView {
+  id: string;
+  account_id: string;
+  transaction_type: string;
+  symbol: string;
+  quantity: number;
+  unit_price: number;
+  fee: number;
+  executed_at: string;
+  notes: string | null;
+  portfolio_accounts: { name: string } | null;
+}
+export interface AllocationWorkspace {
+  mandate: InvestorMandateView | null;
+  valuations: Array<Record<string, unknown>>;
+  theses: Array<Record<string, unknown>>;
+  scenarios: Array<Record<string, unknown>>;
+  recommendation: Record<string, unknown> | null;
+  risk: Record<string, unknown> | null;
+  paper: Record<string, unknown> | null;
+  readiness: Record<string, unknown> | null;
+  signoffs: Array<Record<string, unknown>>;
+}
 export interface DashboardHistoryPoint {
   evaluation_date: string;
   decision_state: string;
@@ -568,10 +601,38 @@ export async function appendInvestorMandate(input: {
   const allowedCurrencies = new Set(["EUR", "USD"]),
     allowedObjectives = new Set(["CAPITAL_PRESERVATION", "BALANCED", "GROWTH"]),
     allowedCadences = new Set(["WEEKLY", "MONTHLY", "QUARTERLY"]),
-    assets = [...new Set(input.allowedAssets)].filter((asset) => asset === "BTC" || asset === "ETH"),
-    numeric = [input.horizonMonths, input.maximumDrawdownPercent, input.minimumCashPercent, input.maximumAssetWeightPercent, input.annualTurnoverBudgetPercent];
-  if (!allowedCurrencies.has(input.baseCurrency) || !allowedObjectives.has(input.objective) || !allowedCadences.has(input.rebalanceCadence) || !assets.length || numeric.some((value) => !Number.isFinite(value))) throw new Error("Ongeldig investormandaat");
-  if (input.horizonMonths < 3 || input.horizonMonths > 240 || input.maximumDrawdownPercent < 1 || input.maximumDrawdownPercent > 80 || input.minimumCashPercent < 0 || input.minimumCashPercent > 100 || input.maximumAssetWeightPercent < 1 || input.maximumAssetWeightPercent > 100 || input.minimumCashPercent + input.maximumAssetWeightPercent > 100 || input.annualTurnoverBudgetPercent < 0 || input.annualTurnoverBudgetPercent > 2000) throw new Error("Mandaatlimieten vallen buiten het toegestane bereik");
+    assets = [...new Set(input.allowedAssets)].filter(
+      (asset) => asset === "BTC" || asset === "ETH",
+    ),
+    numeric = [
+      input.horizonMonths,
+      input.maximumDrawdownPercent,
+      input.minimumCashPercent,
+      input.maximumAssetWeightPercent,
+      input.annualTurnoverBudgetPercent,
+    ];
+  if (
+    !allowedCurrencies.has(input.baseCurrency) ||
+    !allowedObjectives.has(input.objective) ||
+    !allowedCadences.has(input.rebalanceCadence) ||
+    !assets.length ||
+    numeric.some((value) => !Number.isFinite(value))
+  )
+    throw new Error("Ongeldig investormandaat");
+  if (
+    input.horizonMonths < 3 ||
+    input.horizonMonths > 240 ||
+    input.maximumDrawdownPercent < 1 ||
+    input.maximumDrawdownPercent > 80 ||
+    input.minimumCashPercent < 0 ||
+    input.minimumCashPercent > 100 ||
+    input.maximumAssetWeightPercent < 1 ||
+    input.maximumAssetWeightPercent > 100 ||
+    input.minimumCashPercent + input.maximumAssetWeightPercent > 100 ||
+    input.annualTurnoverBudgetPercent < 0 ||
+    input.annualTurnoverBudgetPercent > 2000
+  )
+    throw new Error("Mandaatlimieten vallen buiten het toegestane bereik");
   const now = new Date();
   const { error } = await client.from("investor_mandates").insert({
     user_id: userData.user.id,
@@ -591,18 +652,717 @@ export async function appendInvestorMandate(input: {
   if (error) throw error;
 }
 export async function portfolioOverview() {
-  const client=await database();if(!client)return{accounts:[]as PortfolioAccountView[],holdings:[]as PortfolioHoldingView[],transactions:[]as PortfolioTransactionView[]};
-  const[accounts,holdings,transactions]=await Promise.all([client.from("portfolio_accounts").select("id,name,base_currency,account_type,created_at").order("created_at"),client.from("portfolio_holdings").select("account_id,symbol,quantity").order("symbol"),client.from("portfolio_transactions").select("id,account_id,transaction_type,symbol,quantity,unit_price,fee,executed_at,notes,portfolio_accounts(name)").order("executed_at",{ascending:false}).limit(100)]);
-  for(const[source,result]of[["portfolio_accounts",accounts],["portfolio_holdings",holdings],["portfolio_transactions",transactions]]as const)if(result.error)handleQueryError(source,result.error);
-  return{accounts:(accounts.data??[])as PortfolioAccountView[],holdings:(holdings.data??[]).map(x=>({...x,quantity:Number(x.quantity)}))as PortfolioHoldingView[],transactions:(transactions.data??[]).map(x=>({...x,quantity:Number(x.quantity),unit_price:Number(x.unit_price),fee:Number(x.fee)}))as unknown as PortfolioTransactionView[]};
+  const client = await database();
+  if (!client)
+    return {
+      accounts: [] as PortfolioAccountView[],
+      holdings: [] as PortfolioHoldingView[],
+      transactions: [] as PortfolioTransactionView[],
+      prices: {} as Record<string,number>,
+    };
+  const [accounts, holdings, transactions, prices] = await Promise.all([
+    client
+      .from("portfolio_accounts")
+      .select("id,name,base_currency,account_type,created_at")
+      .order("created_at"),
+    client
+      .from("portfolio_holdings")
+      .select("account_id,symbol,quantity")
+      .order("symbol"),
+    client
+      .from("portfolio_transactions")
+      .select(
+        "id,account_id,transaction_type,symbol,quantity,unit_price,fee,executed_at,notes,portfolio_accounts(name)",
+      )
+      .order("executed_at", { ascending: false })
+      .limit(100),
+    client.from("canonical_observations").select("value,indicators!inner(code)").in("indicators.code",["BTC_USD","ETH_USD"]).order("observed_at",{ascending:false}).limit(10),
+  ]);
+  for (const [source, result] of [
+    ["portfolio_accounts", accounts],
+    ["portfolio_holdings", holdings],
+    ["portfolio_transactions", transactions],
+  ] as const)
+    if (result.error) handleQueryError(source, result.error);
+  return {
+    accounts: (accounts.data ?? []) as PortfolioAccountView[],
+    holdings: (holdings.data ?? []).map((x) => ({
+      ...x,
+      quantity: Number(x.quantity),
+    })) as PortfolioHoldingView[],
+    transactions: (transactions.data ?? []).map((x) => ({
+      ...x,
+      quantity: Number(x.quantity),
+      unit_price: Number(x.unit_price),
+      fee: Number(x.fee),
+    })) as unknown as PortfolioTransactionView[],
+    prices:Object.fromEntries((prices.data??[]).map(x=>[(x.indicators as unknown as {code:string}).code.replace("_USD",""),Number(x.value)]).filter((x,i,a)=>a.findIndex(y=>y[0]===x[0])===i)),
+  };
 }
-export async function createPortfolioAccount(input:{name:string;baseCurrency:string}){
-  const client=await database();if(!client)throw new Error("Database niet geconfigureerd");const{data:userData,error:userError}=await client.auth.getUser();if(userError||!userData.user)throw new Error("Niet geautoriseerd");const name=input.name.trim();if(name.length<2||name.length>80||!(input.baseCurrency==="EUR"||input.baseCurrency==="USD"))throw new Error("Ongeldig portfolioaccount");const{error}=await client.from("portfolio_accounts").insert({user_id:userData.user.id,name,base_currency:input.baseCurrency,account_type:"MANUAL"});if(error)throw error;
+export async function createPortfolioAccount(input: {
+  name: string;
+  baseCurrency: string;
+}) {
+  const client = await database();
+  if (!client) throw new Error("Database niet geconfigureerd");
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData.user) throw new Error("Niet geautoriseerd");
+  const name = input.name.trim();
+  if (
+    name.length < 2 ||
+    name.length > 80 ||
+    !(input.baseCurrency === "EUR" || input.baseCurrency === "USD")
+  )
+    throw new Error("Ongeldig portfolioaccount");
+  const { error } = await client.from("portfolio_accounts").insert({
+    user_id: userData.user.id,
+    name,
+    base_currency: input.baseCurrency,
+    account_type: "MANUAL",
+  });
+  if (error) throw error;
 }
-export async function appendPortfolioTransaction(input:{accountId:string;type:string;symbol:string;quantity:number;unitPrice:number;fee:number;executedAt:string;notes:string}){
-  const client=await database();if(!client)throw new Error("Database niet geconfigureerd");const{data:userData,error:userError}=await client.auth.getUser();if(userError||!userData.user)throw new Error("Niet geautoriseerd");const types=new Set(["DEPOSIT","WITHDRAWAL","BUY","SELL","FEE"]),assets=new Set(["BTC","ETH"]),cashTypes=new Set(["DEPOSIT","WITHDRAWAL","FEE"]),symbol=cashTypes.has(input.type)?"CASH":input.symbol;
-  if(!types.has(input.type)||!Number.isFinite(input.quantity)||input.quantity<=0||!Number.isFinite(input.unitPrice)||input.unitPrice<0||!Number.isFinite(input.fee)||input.fee<0||!input.executedAt||((input.type==="BUY"||input.type==="SELL")&&(!assets.has(symbol)||input.unitPrice<=0)))throw new Error("Ongeldige transactie");
-  const{data:account,error:accountError}=await client.from("portfolio_accounts").select("id").eq("id",input.accountId).eq("user_id",userData.user.id).maybeSingle();if(accountError||!account)throw new Error("Portfolioaccount niet gevonden");const{error}=await client.from("portfolio_transactions").insert({user_id:userData.user.id,account_id:account.id,transaction_type:input.type,symbol,quantity:input.quantity,unit_price:cashTypes.has(input.type)?0:input.unitPrice,fee:input.fee,executed_at:new Date(input.executedAt).toISOString(),notes:input.notes.trim()||null});if(error)throw error;
+export async function appendPortfolioTransaction(input: {
+  accountId: string;
+  type: string;
+  symbol: string;
+  quantity: number;
+  unitPrice: number;
+  fee: number;
+  executedAt: string;
+  notes: string;
+}) {
+  const client = await database();
+  if (!client) throw new Error("Database niet geconfigureerd");
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError || !userData.user) throw new Error("Niet geautoriseerd");
+  const types = new Set(["DEPOSIT", "WITHDRAWAL", "BUY", "SELL", "FEE"]),
+    assets = new Set(["BTC", "ETH"]),
+    cashTypes = new Set(["DEPOSIT", "WITHDRAWAL", "FEE"]),
+    symbol = cashTypes.has(input.type) ? "CASH" : input.symbol;
+  if (
+    !types.has(input.type) ||
+    !Number.isFinite(input.quantity) ||
+    input.quantity <= 0 ||
+    !Number.isFinite(input.unitPrice) ||
+    input.unitPrice < 0 ||
+    !Number.isFinite(input.fee) ||
+    input.fee < 0 ||
+    !input.executedAt ||
+    ((input.type === "BUY" || input.type === "SELL") &&
+      (!assets.has(symbol) || input.unitPrice <= 0))
+  )
+    throw new Error("Ongeldige transactie");
+  const { data: account, error: accountError } = await client
+    .from("portfolio_accounts")
+    .select("id")
+    .eq("id", input.accountId)
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  if (accountError || !account)
+    throw new Error("Portfolioaccount niet gevonden");
+  const { error } = await client.from("portfolio_transactions").insert({
+    user_id: userData.user.id,
+    account_id: account.id,
+    transaction_type: input.type,
+    symbol,
+    quantity: input.quantity,
+    unit_price: cashTypes.has(input.type) ? 0 : input.unitPrice,
+    fee: input.fee,
+    executed_at: new Date(input.executedAt).toISOString(),
+    notes: input.notes.trim() || null,
+  });
+  if (error) throw error;
+}
+export async function importPortfolioCsv(input: {
+  accountId: string;
+  csv: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client),
+    { data: account } = await client!
+      .from("portfolio_accounts")
+      .select("id")
+      .eq("id", input.accountId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+  if (!account) throw new Error("Portfolioaccount niet gevonden");
+  const rows = parsePortfolioCsv(input.csv),
+    cashTypes = new Set(["DEPOSIT", "WITHDRAWAL", "FEE"]),
+    values = rows.map((row) => {
+      const symbol = cashTypes.has(row.type) ? "CASH" : row.symbol;
+      if (
+        (row.type === "BUY" || row.type === "SELL") &&
+        !(symbol === "BTC" || symbol === "ETH")
+      )
+        throw new Error("BUY/SELL vereist BTC of ETH");
+      return {
+        user_id: user.id,
+        account_id: account.id,
+        transaction_type: row.type,
+        symbol,
+        quantity: row.quantity,
+        unit_price: cashTypes.has(row.type) ? 0 : row.unitPrice,
+        fee: row.fee,
+        executed_at: row.executedAt,
+        notes: row.notes || null,
+        external_reference: `CSV:${row.executedAt}:${row.type}:${symbol}:${row.quantity}:${row.unitPrice}:${row.fee}`,
+      };
+    });
+  const { error } = await client!
+    .from("portfolio_transactions")
+    .upsert(values, {
+      onConflict: "user_id,account_id,external_reference",
+      ignoreDuplicates: true,
+    });
+  if (error) throw error;
+  return rows.length;
+}
+export async function reconcilePortfolio(input: {
+  accountId: string;
+  statementBalances: string;
+  tolerance: number;
+}) {
+  const client = await database(),
+    user = await ownedUser(client);
+  const { data: account } = await client!
+    .from("portfolio_accounts")
+    .select("id")
+    .eq("id", input.accountId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!account) throw new Error("Account niet gevonden");
+  let statement: Record<string, number>;
+  try {
+    statement = JSON.parse(input.statementBalances);
+  } catch {
+    throw new Error("Saldi moeten geldige JSON zijn");
+  }
+  const normalized = Object.fromEntries(
+    Object.entries(statement).map(([k, v]) => [k.toUpperCase(), Number(v)]),
+  );
+  if (Object.values(normalized).some((v) => !Number.isFinite(v)))
+    throw new Error("Ongeldige statement-saldi");
+  const { data: holdings, error } = await client!
+    .from("portfolio_holdings")
+    .select("symbol,quantity")
+    .eq("account_id", account.id);
+  if (error) throw error;
+  const ledger = Object.fromEntries(
+      (holdings ?? []).map((x) => [x.symbol, Number(x.quantity)]),
+    ),
+    symbols = new Set([...Object.keys(normalized), ...Object.keys(ledger)]),
+    differences = Object.fromEntries(
+      [...symbols].map((s) => [s, (normalized[s] ?? 0) - (ledger[s] ?? 0)]),
+    ),
+    tolerance = Math.max(0, Number(input.tolerance));
+  const status = Object.values(differences).every(
+    (v) => Math.abs(v) <= tolerance,
+  )
+    ? "MATCHED"
+    : "BREAK";
+  const result = await client!.from("portfolio_reconciliations").insert({
+    user_id: user.id,
+    account_id: account.id,
+    statement_at: new Date().toISOString(),
+    statement_balances: normalized,
+    ledger_balances: ledger,
+    differences,
+    tolerance,
+    status,
+  });
+  if (result.error) throw result.error;
+}
+
+export async function allocationWorkspace(): Promise<AllocationWorkspace> {
+  const client = await database();
+  if (!client)
+    return {
+      mandate: null,
+      valuations: [],
+      theses: [],
+      scenarios: [],
+      recommendation: null,
+      risk: null,
+      paper: null,
+      readiness: null,
+      signoffs: [],
+    };
+  const [
+    mandate,
+    valuations,
+    theses,
+    scenarios,
+    recommendation,
+    risk,
+    paper,
+    readiness,
+    signoffs,
+  ] = await Promise.all([
+    client.from("current_investor_mandate").select("*").maybeSingle(),
+    client
+      .from("valuation_snapshots")
+      .select("*,assets(symbol)")
+      .order("calculated_at", { ascending: false })
+      .limit(10),
+    client
+      .from("asset_theses")
+      .select("*,assets(symbol)")
+      .order("created_at", { ascending: false })
+      .limit(20),
+    client
+      .from("scenario_sets")
+      .select("*,assets(symbol)")
+      .order("created_at", { ascending: false })
+      .limit(20),
+    client
+      .from("allocation_recommendations")
+      .select("*")
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    client
+      .from("portfolio_risk_snapshots")
+      .select("*")
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    client
+      .from("paper_nav")
+      .select("*,paper_portfolios!inner(user_id)")
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    client
+      .from("capital_readiness_assessments")
+      .select("*")
+      .order("assessed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    client
+      .from("analyst_signoffs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20),
+  ]);
+  return {
+    mandate: mandate.data as InvestorMandateView | null,
+    valuations: valuations.data ?? [],
+    theses: theses.data ?? [],
+    scenarios: scenarios.data ?? [],
+    recommendation: recommendation.data,
+    risk: risk.data,
+    paper: paper.data,
+    readiness: readiness.data,
+    signoffs: signoffs.data ?? [],
+  };
+}
+async function ownedUser(client: Awaited<ReturnType<typeof database>>) {
+  if (!client) throw new Error("Database niet geconfigureerd");
+  const { data, error } = await client.auth.getUser();
+  if (error || !data.user) throw new Error("Niet geautoriseerd");
+  return data.user;
+}
+export async function appendAssetThesis(input: {
+  symbol: string;
+  thesis: string;
+  drivers: string;
+  counterThesis: string;
+  invalidators: string;
+  reviewOn: string;
+  conviction?: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client);
+  if (input.thesis.trim().length < 20 || !input.reviewOn)
+    throw new Error("Thesis en reviewdatum zijn verplicht");
+  const { data: asset, error: ae } = await client!
+    .from("assets")
+    .select("id")
+    .eq("symbol", input.symbol)
+    .single();
+  if (ae) throw ae;
+  const now = new Date();
+  const { error } = await client!.from("asset_theses").insert({
+    user_id: user.id,
+    asset_id: asset.id,
+    version: `thesis-v1-${now.toISOString()}-${crypto.randomUUID()}`,
+    status: "ACTIVE",
+    thesis: input.thesis.trim(),
+    causal_drivers: input.drivers.split("\n").filter(Boolean),
+    assumptions: [],
+    catalysts: [],
+    counter_thesis: input.counterThesis.trim(),
+    invalidators: input.invalidators.split("\n").filter(Boolean),
+    review_on: input.reviewOn,
+    evidence_status: "SHADOW",
+    analyst_conviction: ["LOW", "MEDIUM", "HIGH"].includes(
+      input.conviction ?? "",
+    )
+      ? input.conviction
+      : "MEDIUM",
+  });
+  if (error) throw error;
+}
+export async function appendScenarioSet(input: {
+  symbol: string;
+  horizon: number;
+  bearProbability: number;
+  baseProbability: number;
+  bullProbability: number;
+  bearTarget: number;
+  baseTarget: number;
+  bullTarget: number;
+}) {
+  const client = await database(),
+    user = await ownedUser(client),
+    probabilities = [
+      input.bearProbability,
+      input.baseProbability,
+      input.bullProbability,
+    ],
+    targets = [input.bearTarget, input.baseTarget, input.bullTarget];
+  if (
+    probabilities.some((x) => !Number.isFinite(x) || x < 0) ||
+    Math.abs(probabilities.reduce((a, b) => a + b, 0) - 100) > 0.001 ||
+    targets.some((x) => !Number.isFinite(x) || x <= 0) ||
+    input.horizon < 1
+  )
+    throw new Error(
+      "Scenario's moeten positieve targets en exact 100% waarschijnlijkheid hebben",
+    );
+  const { data: asset } = await client!
+      .from("assets")
+      .select("id")
+      .eq("symbol", input.symbol)
+      .single(),
+    { data: valuation } = await client!
+      .from("valuation_snapshots")
+      .select("current_price")
+      .eq("asset_id", asset!.id)
+      .order("calculated_at", { ascending: false })
+      .limit(1)
+      .single(),
+    price = Number(valuation!.current_price),
+    returns = targets.map((x) => (x / price - 1) * 100),
+    expected = returns.reduce(
+      (s, x, i) => s + (x * probabilities[i]!) / 100,
+      0,
+    ),
+    downside = Math.min(...returns),
+    upside = Math.max(...returns);
+  const { error } = await client!.from("scenario_sets").insert({
+    user_id: user.id,
+    asset_id: asset!.id,
+    version: `scenario-v1-${new Date().toISOString()}-${crypto.randomUUID()}`,
+    horizon_months: input.horizon,
+    scenarios: [
+      {
+        name: "BEAR",
+        probability: probabilities[0],
+        target: targets[0],
+        returnPercent: returns[0],
+      },
+      {
+        name: "BASE",
+        probability: probabilities[1],
+        target: targets[1],
+        returnPercent: returns[1],
+      },
+      {
+        name: "BULL",
+        probability: probabilities[2],
+        target: targets[2],
+        returnPercent: returns[2],
+      },
+    ],
+    expected_return_percent: expected,
+    downside_percent: downside,
+    upside_downside_ratio: downside < 0 ? upside / Math.abs(downside) : null,
+    evidence_status: "SHADOW",
+  });
+  if (error) throw error;
+}
+export async function signoffRecommendation(input: {
+  recommendationId: string;
+  action: string;
+  rationale: string;
+  modifiedTargets?: string;
+  reviewOn?: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client),
+    actions = new Set(["APPROVE", "MODIFY", "REJECT", "DEFER"]);
+  if (!actions.has(input.action) || input.rationale.trim().length < 10)
+    throw new Error("Ongeldige sign-off");
+  const { data: r } = await client!
+    .from("allocation_recommendations")
+    .select("id")
+    .eq("id", input.recommendationId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!r) throw new Error("Aanbeveling niet gevonden");
+  let modifiedTargets: Record<string, unknown> | null = null;
+  if (input.action === "MODIFY") {
+    try {
+      modifiedTargets = JSON.parse(input.modifiedTargets ?? "");
+    } catch {
+      throw new Error("MODIFY vereist geldige target-JSON");
+    }
+  }
+  const { error } = await client!.from("analyst_signoffs").insert({
+    user_id: user.id,
+    recommendation_id: r.id,
+    action: input.action,
+    rationale: input.rationale.trim(),
+    modified_targets: modifiedTargets,
+    review_on: input.reviewOn || null,
+  });
+  if (error) throw error;
+}
+
+export async function governanceWorkspace() {
+  const client = await database();
+  if (!client) return { sources: [], methods: [], rules: [], health: [] };
+  const [sources, methods, rules, health] = await Promise.all([
+    client.from("source_governance_latest").select("*").order("provider_name"),
+    client
+      .from("methodology_versions")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    client
+      .from("source_reconciliation_rules")
+      .select("*")
+      .order("indicator_code"),
+    client.from("allocation_source_gate").select("*").order("indicator_code"),
+  ]);
+  for (const result of [sources, methods, rules, health])
+    if (result.error) handleQueryError("governance", result.error);
+  return {
+    sources: sources.data ?? [],
+    methods: methods.data ?? [],
+    rules: rules.data ?? [],
+    health: health.data ?? [],
+  };
+}
+
+export async function reviewQueue() {
+  const client = await database();
+  if (!client)
+    return { theses: [], catalysts: [], recommendations: [], events: [] };
+  const today = new Date().toISOString();
+  const [theses, catalysts, recommendations, events] = await Promise.all([
+    client
+      .from("asset_theses")
+      .select("*,assets(symbol)")
+      .eq("status", "ACTIVE")
+      .lte("review_on", today.slice(0, 10))
+      .order("review_on"),
+    client
+      .from("catalyst_events")
+      .select("*,assets(symbol)")
+      .eq("status", "SCHEDULED")
+      .gte("event_at", today)
+      .order("event_at")
+      .limit(30),
+    client
+      .from("allocation_recommendations")
+      .select(
+        "id,status,calculated_at,warnings,target_ranges,analyst_signoffs(id,action)",
+      )
+      .order("calculated_at", { ascending: false })
+      .limit(30),
+    client
+      .from("data_quality_events")
+      .select("id,severity,event_type,details,created_at")
+      .is("resolved_at", null)
+      .order("created_at", { ascending: false })
+      .limit(30),
+  ]);
+  return {
+    theses: theses.data ?? [],
+    catalysts: catalysts.data ?? [],
+    recommendations: recommendations.data ?? [],
+    events: events.data ?? [],
+  };
+}
+
+export async function assetDecisionPacket(symbol: string) {
+  const client = await database();
+  if (!client)
+    return {
+      valuation: null,
+      fundamentals: [],
+      thesis: null,
+      scenario: null,
+      recommendation: null,
+    };
+  const { data: asset } = await client
+    .from("assets")
+    .select("id")
+    .eq("symbol", symbol)
+    .maybeSingle();
+  if (!asset)
+    return {
+      valuation: null,
+      fundamentals: [],
+      thesis: null,
+      scenario: null,
+      recommendation: null,
+    };
+  const [valuation, fundamentals, thesis, scenario, recommendation] =
+    await Promise.all([
+      client
+        .from("valuation_snapshots")
+        .select("*")
+        .eq("asset_id", asset.id)
+        .order("calculated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("fundamental_snapshots")
+        .select("*")
+        .eq("asset_id", asset.id)
+        .order("calculated_at", { ascending: false })
+        .limit(8),
+      client
+        .from("asset_theses")
+        .select("*")
+        .eq("asset_id", asset.id)
+        .eq("status", "ACTIVE")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("scenario_sets")
+        .select("*")
+        .eq("asset_id", asset.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("allocation_recommendations")
+        .select("*")
+        .order("calculated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+  return {
+    valuation: valuation.data,
+    fundamentals: fundamentals.data ?? [],
+    thesis: thesis.data,
+    scenario: scenario.data,
+    recommendation: recommendation.data,
+  };
+}
+
+export async function addCatalyst(input: {
+  symbol: string;
+  type: string;
+  title: string;
+  eventAt: string;
+  sourceUrl: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client);
+  if (input.title.trim().length < 5 || !input.eventAt)
+    throw new Error("Ongeldige catalyst");
+  const { data: asset, error } = await client!
+    .from("assets")
+    .select("id")
+    .eq("symbol", input.symbol)
+    .single();
+  if (error) throw error;
+  const inserted = await client!.from("catalyst_events").insert({
+    user_id: user.id,
+    asset_id: asset.id,
+    event_type: input.type.trim().toUpperCase(),
+    title: input.title.trim(),
+    event_at: input.eventAt,
+    source_url: input.sourceUrl.trim() || null,
+  });
+  if (inserted.error) throw inserted.error;
+}
+
+export async function universeWorkspace() {
+  const client = await database();
+  if (!client) return { reviews: [], connectors: [] };
+  const [reviews, connectors] = await Promise.all([
+    client
+      .from("asset_admission_reviews")
+      .select("*")
+      .order("reviewed_at", { ascending: false }),
+    client
+      .from("read_only_connectors")
+      .select("*,portfolio_accounts(name)")
+      .order("created_at", { ascending: false }),
+  ]);
+  return { reviews: reviews.data ?? [], connectors: connectors.data ?? [] };
+}
+export async function addReadOnlyConnector(input: {
+  accountId: string;
+  provider: string;
+  credentialReference: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client);
+  if (
+    input.provider.trim().length < 2 ||
+    input.credentialReference.trim().length < 3
+  )
+    throw new Error("Ongeldige connector");
+  const { data: account } = await client!
+    .from("portfolio_accounts")
+    .select("id")
+    .eq("id", input.accountId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (!account) throw new Error("Account niet gevonden");
+  const result = await client!
+    .from("read_only_connectors")
+    .insert({
+      user_id: user.id,
+      account_id: account.id,
+      provider: input.provider.trim(),
+      credential_reference: input.credentialReference.trim(),
+      permissions: { read: true, trade: false, withdraw: false },
+      status: "DISABLED",
+    });
+  if (result.error) throw result.error;
+}
+export async function addThesisEvidence(input: {
+  thesisId: string;
+  classification: string;
+  fact: string;
+  sourceUrl: string;
+}) {
+  const client = await database(),
+    user = await ownedUser(client),
+    allowed = new Set([
+      "SUPPORTING",
+      "CONTRADICTING",
+      "IRRELEVANT",
+      "HARD_INVALIDATOR",
+    ]);
+  if (!allowed.has(input.classification) || input.fact.trim().length < 10)
+    throw new Error("Ongeldig thesisbewijs");
+  let fact: Record<string, unknown>;
+  try {
+    fact = JSON.parse(input.fact);
+  } catch {
+    fact = { observation: input.fact.trim() };
+  }
+  const result = await client!
+    .from("thesis_evidence")
+    .insert({
+      user_id: user.id,
+      thesis_id: input.thesisId,
+      observed_at: new Date().toISOString(),
+      classification: input.classification,
+      fact,
+      source_url: input.sourceUrl.trim() || null,
+    });
+  if (result.error) throw result.error;
 }
 export async function dashboardHistory() {
   const client = await database();

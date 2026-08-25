@@ -124,6 +124,49 @@ export class FredProvider implements HistoricalDataProvider {
       }));
   }
 }
+export class FredCashRateProvider implements HistoricalDataProvider {
+  readonly name = "fred";
+  readonly role: ProviderRole = "CANONICAL";
+  readonly supportedIndicators = ["US_3M_TBILL_YIELD"] as const;
+  readonly supportsBackfill = true;
+  readonly expectedLatency = "daily publication";
+  readonly rateLimit = "120 requests/minute";
+  constructor(
+    private readonly apiKey: string,
+    private readonly fetcher: Fetch = fetch,
+  ) {}
+  async fetchLatest(i: PhaseOneIndicator) {
+    const to = new Date();
+    return this.fetchRange(i, new Date(to.getTime() - 14 * 864e5), to);
+  }
+  async fetchRange(indicator: PhaseOneIndicator, from: Date, to: Date) {
+    if (indicator !== "US_3M_TBILL_YIELD")
+      throw new Error(`fred cash rate does not support ${indicator}`);
+    const p = new URLSearchParams({
+        series_id: "DGS3MO",
+        api_key: this.apiKey,
+        file_type: "json",
+        observation_start: from.toISOString().slice(0, 10),
+        observation_end: to.toISOString().slice(0, 10),
+      }),
+      r = await this.fetcher(
+        `https://api.stlouisfed.org/fred/series/observations?${p}`,
+      );
+    if (!r.ok) throw new Error(`fred DGS3MO HTTP ${r.status}`);
+    return fredSchema
+      .parse(await r.json())
+      .observations.filter((x) => x.value !== ".")
+      .map((x) => ({
+        indicator,
+        observedAt: new Date(`${x.date}T00:00:00Z`),
+        revisionAt: new Date(`${x.realtime_start}T00:00:00Z`),
+        value: Number(x.value),
+        unit: "percent",
+        providerReference: `DGS3MO:${x.date}:${x.realtime_start}`,
+        payload: { ...x, series: "DGS3MO" },
+      }));
+  }
+}
 
 export const calculateDxyProxy = (rates: {
   eurUsd: number;
@@ -272,10 +315,59 @@ export class EcbDxyProxyProvider implements HistoricalDataProvider {
   }
 }
 export class EcbEurUsdProvider implements HistoricalDataProvider {
-  readonly name="ecb-fx";readonly role:ProviderRole="CANONICAL";readonly supportedIndicators=["EUR_USD"]as const;readonly supportsBackfill=true;readonly expectedLatency="daily ECB reference-rate publication";readonly rateLimit="public SDMX endpoint";
-  constructor(private readonly fetcher:Fetch=fetch){}
-  async fetchLatest(indicator:PhaseOneIndicator){const to=new Date();return(await this.fetchRange(indicator,new Date(to.getTime()-10*86_400_000),to)).slice(-1)}
-  async fetchRange(indicator:PhaseOneIndicator,from:Date,to:Date){if(indicator!=="EUR_USD")throw new Error(`ecb-fx does not support ${indicator}`);const params=new URLSearchParams({startPeriod:from.toISOString().slice(0,10),endPeriod:to.toISOString().slice(0,10),format:"csvdata",detail:"dataonly"});const response=await this.fetcher(`https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?${params}`);if(!response.ok)throw new Error(`ecb-fx HTTP ${response.status}`);const rows=parseCsv(await response.text()),header=rows.shift()?.map(x=>x.trim().replace(/^\uFEFF/,""))??[],di=header.indexOf("TIME_PERIOD"),vi=header.indexOf("OBS_VALUE");if(di<0||vi<0)throw new Error("ecb-fx CSV columns missing");return rows.flatMap(row=>{const date=row[di],raw=row[vi],value=Number(raw);return date&&Number.isFinite(value)?[{indicator,observedAt:new Date(`${date}T00:00:00Z`),value,unit:"usd_per_eur",providerReference:`ECB-EURUSD-v1:${date}`,payload:{date,value,series:"EXR/D.USD.EUR.SP00.A"}}satisfies ProviderObservation]:[]})}
+  readonly name = "ecb-fx";
+  readonly role: ProviderRole = "CANONICAL";
+  readonly supportedIndicators = ["EUR_USD"] as const;
+  readonly supportsBackfill = true;
+  readonly expectedLatency = "daily ECB reference-rate publication";
+  readonly rateLimit = "public SDMX endpoint";
+  constructor(private readonly fetcher: Fetch = fetch) {}
+  async fetchLatest(indicator: PhaseOneIndicator) {
+    const to = new Date();
+    return (
+      await this.fetchRange(
+        indicator,
+        new Date(to.getTime() - 10 * 86_400_000),
+        to,
+      )
+    ).slice(-1);
+  }
+  async fetchRange(indicator: PhaseOneIndicator, from: Date, to: Date) {
+    if (indicator !== "EUR_USD")
+      throw new Error(`ecb-fx does not support ${indicator}`);
+    const params = new URLSearchParams({
+      startPeriod: from.toISOString().slice(0, 10),
+      endPeriod: to.toISOString().slice(0, 10),
+      format: "csvdata",
+      detail: "dataonly",
+    });
+    const response = await this.fetcher(
+      `https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?${params}`,
+    );
+    if (!response.ok) throw new Error(`ecb-fx HTTP ${response.status}`);
+    const rows = parseCsv(await response.text()),
+      header = rows.shift()?.map((x) => x.trim().replace(/^\uFEFF/, "")) ?? [],
+      di = header.indexOf("TIME_PERIOD"),
+      vi = header.indexOf("OBS_VALUE");
+    if (di < 0 || vi < 0) throw new Error("ecb-fx CSV columns missing");
+    return rows.flatMap((row) => {
+      const date = row[di],
+        raw = row[vi],
+        value = Number(raw);
+      return date && Number.isFinite(value)
+        ? [
+            {
+              indicator,
+              observedAt: new Date(`${date}T00:00:00Z`),
+              value,
+              unit: "usd_per_eur",
+              providerReference: `ECB-EURUSD-v1:${date}`,
+              payload: { date, value, series: "EXR/D.USD.EUR.SP00.A" },
+            } satisfies ProviderObservation,
+          ]
+        : [];
+    });
+  }
 }
 
 export class FredBroadDollarProvider implements HistoricalDataProvider {
@@ -381,16 +473,14 @@ export class TwelveDataProvider implements HistoricalDataProvider {
     );
     if (!response.ok) throw new Error(`twelve-data HTTP ${response.status}`);
     const unit = "usd";
-    return twelveSchema
-      .parse(await response.json())
-      .values.map((row) => ({
-        indicator,
-        observedAt: new Date(`${row.datetime.replace(" ", "T")}Z`),
-        value: Number(row.close),
-        unit,
-        providerReference: `${symbol}:${interval}:${row.datetime}`,
-        payload: row,
-      }));
+    return twelveSchema.parse(await response.json()).values.map((row) => ({
+      indicator,
+      observedAt: new Date(`${row.datetime.replace(" ", "T")}Z`),
+      value: Number(row.close),
+      unit,
+      providerReference: `${symbol}:${interval}:${row.datetime}`,
+      payload: row,
+    }));
   }
 }
 
@@ -426,16 +516,14 @@ export class DefiLlamaStablecoinProvider implements HistoricalDataProvider {
       "https://stablecoins.llama.fi/stablecoincharts/all",
     );
     if (!response.ok) throw new Error(`defillama HTTP ${response.status}`);
-    return stablecoinChartSchema
-      .parse(await response.json())
-      .map((row) => ({
-        indicator,
-        observedAt: new Date(Number(row.date) * 1_000),
-        value: row.totalCirculatingUSD.peggedUSD,
-        unit: "usd",
-        providerReference: `all:${row.date}`,
-        payload: row,
-      }));
+    return stablecoinChartSchema.parse(await response.json()).map((row) => ({
+      indicator,
+      observedAt: new Date(Number(row.date) * 1_000),
+      value: row.totalCirculatingUSD.peggedUSD,
+      unit: "usd",
+      providerReference: `all:${row.date}`,
+      payload: row,
+    }));
   }
 }
 

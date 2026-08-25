@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
   dashboardHistory,
+  assetDecisionPacket,
   decision,
   decisions,
   type DecisionView,
@@ -142,9 +143,10 @@ export default async function AssetPage({
   if (symbol !== "BTC" && symbol !== "ETH") notFound();
   const selected = (await searchParams).decision;
   const selectedId = Array.isArray(selected) ? selected[0] : selected;
-  const [history, replay] = await Promise.all([
+  const [history, replay, packet] = await Promise.all([
     decisions(100),
     dashboardHistory(),
+    assetDecisionPacket(symbol),
   ]);
   const item = selectedId
     ? await decision(selectedId)
@@ -218,6 +220,69 @@ export default async function AssetPage({
         </div>
       </header>
       <AssetDetailChart symbol={symbol} points={visibleReplay} />
+      <section className="journal-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="overline">Decision packet</span>
+              <h2>Waardering en scenario</h2>
+            </div>
+            <span>
+              {String(packet.valuation?.evidence_status ?? "MISSING")}
+            </span>
+          </div>
+          {packet.valuation ? (
+            <div className="horizon-grid">
+              <div>
+                <small>Fair-value band</small>
+                <strong>
+                  {Number(packet.valuation.fair_value_low).toLocaleString()}–
+                  {Number(packet.valuation.fair_value_high).toLocaleString()}
+                </strong>
+              </div>
+              <div>
+                <small>Current</small>
+                <strong>
+                  {Number(packet.valuation.current_price).toLocaleString()}
+                </strong>
+              </div>
+              <div>
+                <small>Expected return</small>
+                <strong>
+                  {packet.scenario
+                    ? `${Number(packet.scenario.expected_return_percent).toFixed(1)}%`
+                    : "geen scenario"}
+                </strong>
+              </div>
+            </div>
+          ) : (
+            <p className="muted">Geen point-in-time waardering.</p>
+          )}
+          <p className="validation-warning">
+            Hypothetische band en analistaannames; geen koersvoorspelling.
+          </p>
+        </section>
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="overline">Fundamental coverage</span>
+              <h2>Niet-prijs intelligence</h2>
+            </div>
+          </div>
+          {packet.fundamentals.map((x: Record<string, unknown>) => (
+            <article className="journal-entry" key={String(x.id)}>
+              <div>
+                <strong>{String(x.module).replaceAll("_", " ")}</strong>
+                <span>{Number(x.coverage_percent).toFixed(0)}%</span>
+              </div>
+              <p>
+                {String(x.evidence_status)} · score{" "}
+                {x.score === null ? "niet berekend" : String(x.score)}
+              </p>
+            </article>
+          ))}
+        </section>
+      </section>
       <section className="regime-grid v3 detail">
         <RegimeStrip
           label="Macro liquidity"

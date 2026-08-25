@@ -30,3 +30,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run shadow:cycle
+      - run: npm run portfolio:snapshot
+      - run: npm run portfolio:lots
+      - run: npm run valuations:calculate
+      - run: npm run intelligence:calculate
+      - run: npm run allocations:calculate
+      - run: npm run portfolio:risk
+      - run: npm run paper:run
+      - run: npm run performance:calculate
+      - run: npm run capital:assess
