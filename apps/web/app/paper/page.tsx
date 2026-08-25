@@ -2,11 +2,13 @@ import Link from "next/link";
 import { paperWorkspace } from "../../lib/data";
 import { Shell } from "../ui/shell";
 import { PaperChart } from "./chart";
+import { GuidedJourney } from "../ui/guided-journey";
 export default async function PaperPage() {
   const w = await paperWorkspace();
   if (!w.portfolio)
     return (
       <Shell current="paper">
+        <GuidedJourney current="paper" />
         <header className="page-head">
           <div>
             <span className="overline">Prospective validation</span>
@@ -34,22 +36,21 @@ export default async function PaperPage() {
     metrics = (w.analytics?.metrics ?? {}) as Record<string, unknown>;
   return (
     <Shell current="paper">
+      <GuidedJourney current="paper" />
       <header className="page-head">
         <div>
-          <span className="overline">
-            Alleen fictief · geen orderuitvoering
-          </span>
-          <h1>Paperportfolio</h1>
+          <span className="overline">Stap 3 · hoe pakt het uit?</span>
+          <h1>Resultaat van je testbeslissingen</h1>
           <p>
-            Volg beslissingen, fictieve fills, kosten en bewijs tegen vooraf
-            vastgelegde benchmarks.
+            Vergelijk het fictieve resultaat met de benchmarks. Trek pas na
+            meerdere maanden conclusies.
           </p>
         </div>
-        <div className="asof">
+        <div className="asof advanced-only">
           Protocol<strong>{w.portfolio.protocol_version}</strong>
         </div>
       </header>
-      <nav className="paper-tabs">
+      <nav className="paper-tabs advanced-only">
         <a href="#portfolio">Portfolio</a>
         <a href="#decisions">Beslissingen</a>
         <a href="#results">Resultaten</a>
@@ -99,7 +100,24 @@ export default async function PaperPage() {
           }
         />
       </section>
-      <section id="decisions" className="panel mandate-benchmarks">
+      <section className="panel guided-only simple-explainer">
+        <span className="overline">Wat moet je hiermee?</span>
+        <h2>
+          {w.trades.length
+            ? "Je beslissing is fictief verwerkt"
+            : "Er is nog niets fictief uitgevoerd"}
+        </h2>
+        <p>
+          {w.trades.length
+            ? "Bekijk vooral de ontwikkeling van de lijn en het verschil met de benchmark. Een korte winst- of verliesperiode bewijst nog niets."
+            : "Dat is normaal. Een fictieve trade ontstaat alleen na een beschikbaar voorstel en jouw expliciete akkoord of aanpassing."}
+        </p>
+        <Link href="/today">Terug naar Vandaag →</Link>
+      </section>
+      <section
+        id="decisions"
+        className="panel mandate-benchmarks advanced-only"
+      >
         <div className="panel-head">
           <div>
             <span className="overline">

@@ -7,7 +7,26 @@ import {
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
 import { ScenarioPreview } from "./scenario-preview";
+import { GuidedJourney } from "../ui/guided-journey";
 const num = (f: FormData, k: string) => Number(f.get(k));
+const actionLabels: Record<string, string> = {
+  APPROVE: "Akkoord",
+  MODIFY: "Aangepast",
+  REJECT: "Afgewezen",
+  DEFER: "Uitgesteld",
+};
+const stateLabels: Record<string, string> = {
+  DEFENSIVE: "voorzichtig",
+  RISK_REDUCTION: "risico afbouwen",
+  NEUTRAL: "afwachten",
+  ACCUMULATION: "geleidelijk opbouwen",
+  STRONG_ACCUMULATION: "sterk opbouwend",
+  CAPITULATION: "extreme stress",
+  STRESSED: "verhoogde stress",
+  HEALTHY: "gezond",
+  ELEVATED_RISK: "verhoogd risico",
+  OVERHEATED: "oververhit",
+};
 export default async function AllocationPage() {
   const w = await allocationWorkspace();
   async function thesis(f: FormData) {
@@ -91,6 +110,18 @@ export default async function AllocationPage() {
         rationale?: string;
       }>
     ).find((signoff) => signoff.recommendation_id === r?.id),
+    explanationInputs =
+      (
+        r?.explanation_facts as {
+          inputs?: Array<{
+            asset: string;
+            opportunityState: string;
+            stressState: string;
+            expectedReturnPercent: number | null;
+          }>;
+        }
+      )?.inputs ?? [],
+    warnings = (r?.warnings ?? []) as string[],
     scenarioRows =
       (w.scenarios as Array<{
         id: string;
@@ -108,16 +139,17 @@ export default async function AllocationPage() {
     }));
   return (
     <Shell current="allocation">
+      <GuidedJourney current="allocation" />
       <header className="page-head">
         <div>
-          <span className="overline">Shadow capital allocation</span>
-          <h1>Allocation cockpit</h1>
+          <span className="overline">Stap 2 · wat besluit ik?</span>
+          <h1>Beslissing beoordelen</h1>
           <p>
-            Regime, waardering, thesis, scenario en mandaat worden hier
-            samengebracht zonder orderuitvoering.
+            Vergelijk je huidige verdeling met de voorgestelde bandbreedtes. Jij
+            houdt altijd de controle; dit blijft een fictieve test.
           </p>
         </div>
-        <div className="asof">
+        <div className="asof advanced-only">
           Evidence
           <strong>{String(r?.evidence_status ?? "NO RECOMMENDATION")}</strong>
           <span>
@@ -144,7 +176,7 @@ export default async function AllocationPage() {
             {!r
               ? "Zonder recommendation is er niets te beoordelen."
               : r.status === "AVAILABLE"
-                ? "Vergelijk je huidige positie met de targetrange, lees scenarioverlies en invalidators en kies daarna zelf Approve, Modify, Reject of Defer."
+                ? "Controleer de doelbanden hieronder. Kies daarna akkoord, aanpassen, afwijzen of later beslissen en leg kort uit waarom."
                 : "De app vraagt geen nieuwe exposure zolang een bron, thesis, waardering, operationele controle of mandaatconstraint blokkeert."}
           </p>
         </div>
@@ -163,15 +195,21 @@ export default async function AllocationPage() {
       <section className="panel">
         <div className="panel-head">
           <div>
-            <span className="overline">Latest policy output</span>
-            <h2>{String(r?.status ?? "Nog niet berekend")}</h2>
+            <span className="overline">Wat stelt de app voor?</span>
+            <h2>
+              {r?.status === "AVAILABLE"
+                ? "Voorstel beschikbaar"
+                : String(r?.status ?? "Nog niet berekend")}
+            </h2>
           </div>
-          <span>{String(r?.allocation_policy_version ?? "—")}</span>
+          <span className="advanced-only">
+            {String(r?.allocation_policy_version ?? "—")}
+          </span>
         </div>
         <div className="horizon-grid">
           {["BTC", "ETH", "CASH"].map((x) => (
             <div key={x}>
-              <small>{x} huidige positie → doelband</small>
+              <small>{x} nu → voorgestelde band</small>
               <strong>
                 {targets[x] && currentWeights[x] !== null
                   ? `${currentWeights[x]!.toFixed(1)}% → ${targets[x].minimum}%–${targets[x].maximum}%`
@@ -193,17 +231,54 @@ export default async function AllocationPage() {
             </div>
           ))}
         </div>
+        {r && (
+          <section className="guided-decision-checks guided-only">
+            <article>
+              <b>Waarom dit voorstel?</b>
+              <p>
+                {explanationInputs.length
+                  ? explanationInputs
+                      .map(
+                        (input) =>
+                          `${input.asset}: ${stateLabels[input.opportunityState] ?? input.opportunityState}, marktstructuur ${stateLabels[input.stressState] ?? input.stressState}`,
+                      )
+                      .join(". ")
+                  : "Er zijn nog onvoldoende modelinputs om een voorstel toe te lichten."}
+              </p>
+            </article>
+            <article>
+              <b>Welke veiligheidsgrenzen gelden?</b>
+              <p>
+                Minimaal {String(w.mandate?.minimum_cash_percent ?? "—")}% cash
+                en maximaal{" "}
+                {String(w.mandate?.maximum_asset_weight_percent ?? "—")}% per
+                cryptoasset.
+              </p>
+            </article>
+            <article>
+              <b>Waar moet je op letten?</b>
+              <p>
+                {warnings.length
+                  ? "Er zijn waarschuwingen. Verhoog geen exposure zolang het voorstel geblokkeerd is."
+                  : "Nieuwe marktdata, oplopende stress of een ongeldige thesis kan de doelbanden veranderen."}
+              </p>
+            </article>
+          </section>
+        )}
         {r && latestSignoff && (
           <div className="trust-banner">
-            <strong>Laatst vastgelegd: {latestSignoff.action}</strong>
+            <strong>
+              Jouw keuze:{" "}
+              {actionLabels[latestSignoff.action ?? ""] ?? latestSignoff.action}
+            </strong>
             <span>{latestSignoff.rationale}</span>
           </div>
         )}
-        {r && (
+        {r?.status === "AVAILABLE" && (
           <form
             id="human-review"
             action={signoff}
-            className="journal-form mandate-benchmarks"
+            className={`journal-form mandate-benchmarks ${latestSignoff ? "advanced-only" : ""}`}
           >
             <input
               type="hidden"
@@ -211,16 +286,16 @@ export default async function AllocationPage() {
               value={String(r.id)}
             />
             <label>
-              Menselijke beoordeling
+              Wat wil je doen?
               <select name="action">
-                <option>APPROVE</option>
-                <option>MODIFY</option>
-                <option>REJECT</option>
-                <option>DEFER</option>
+                <option value="APPROVE">Akkoord — fictief verwerken</option>
+                <option value="MODIFY">Aanpassen — andere bandbreedtes</option>
+                <option value="REJECT">Afwijzen — niets wijzigen</option>
+                <option value="DEFER">Later beslissen</option>
               </select>
             </label>
             <label>
-              Rationale
+              Waarom kies je dit?
               <textarea
                 name="rationale"
                 minLength={10}
@@ -228,40 +303,43 @@ export default async function AllocationPage() {
                 placeholder="Welke feiten, risico's en grenzen bepalen je keuze?"
               />
             </label>
-            <fieldset>
-              <legend>Eigen doelbanden (alleen gebruikt bij MODIFY)</legend>
-              {(["BTC", "ETH"] as const).map((asset) => (
-                <div className="range-inputs" key={asset}>
-                  <strong>{asset}</strong>
-                  <label>
-                    Minimum %
-                    <input
-                      name={`${asset.toLowerCase()}_minimum`}
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      defaultValue={targets[asset]?.minimum ?? 0}
-                    />
-                  </label>
-                  <label>
-                    Maximum %
-                    <input
-                      name={`${asset.toLowerCase()}_maximum`}
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      defaultValue={targets[asset]?.maximum ?? 0}
-                    />
-                  </label>
-                </div>
-              ))}
-              <small>
-                De cashvloer en maximumweging uit je mandaat worden bij opslaan
-                opnieuw gecontroleerd.
-              </small>
-            </fieldset>
+            <details className="modify-ranges">
+              <summary>Alleen bij Aanpassen: kies andere bandbreedtes</summary>
+              <fieldset>
+                <legend>Eigen doelbanden</legend>
+                {(["BTC", "ETH"] as const).map((asset) => (
+                  <div className="range-inputs" key={asset}>
+                    <strong>{asset}</strong>
+                    <label>
+                      Minimum %
+                      <input
+                        name={`${asset.toLowerCase()}_minimum`}
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        defaultValue={targets[asset]?.minimum ?? 0}
+                      />
+                    </label>
+                    <label>
+                      Maximum %
+                      <input
+                        name={`${asset.toLowerCase()}_maximum`}
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        defaultValue={targets[asset]?.maximum ?? 0}
+                      />
+                    </label>
+                  </div>
+                ))}
+                <small>
+                  De cashvloer en maximumweging uit je mandaat worden bij
+                  opslaan opnieuw gecontroleerd.
+                </small>
+              </fieldset>
+            </details>
             <label className="advanced-only">
               Geavanceerde target-override (JSON, optioneel)
               <textarea
@@ -278,7 +356,7 @@ export default async function AllocationPage() {
         )}
       </section>
       <ScenarioPreview />
-      <section className="panel">
+      <section className="panel advanced-only">
         <div className="panel-head">
           <div>
             <span className="overline">Scenario lab</span>
@@ -301,7 +379,7 @@ export default async function AllocationPage() {
           geen voorspelling.
         </p>
       </section>
-      <section className="journal-grid">
+      <section className="journal-grid advanced-only">
         <section className="panel">
           <div className="panel-head">
             <div>

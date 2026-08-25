@@ -26,10 +26,8 @@ export function Shell({
 }) {
   const nav = [
     ["today", "Vandaag", "/today"],
-    ["portfolio", "Portfolio", "/portfolio"],
-    ["allocation", "Beslissingen", "/allocation"],
-    ["paper", "Paperresultaten", "/paper"],
-    ["dashboard", "Onderzoek", "/dashboard"],
+    ["allocation", "Beslissen", "/allocation"],
+    ["paper", "Resultaat", "/paper"],
   ] as const;
   return (
     <div className="terminal-shell">
@@ -54,6 +52,8 @@ export function Shell({
         <details className="advanced-nav advanced-only">
           <summary>Geavanceerd</summary>
           <nav>
+            <Link href="/portfolio">Werkelijk portfolio</Link>
+            <Link href="/dashboard">Marktonderzoek</Link>
             <Link href="/reviews">Reviewqueue</Link>
             <Link href="/workbench">Werkbank</Link>
             <Link href="/history">Historie</Link>

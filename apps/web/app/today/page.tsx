@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { todayWorkspace } from "../../lib/data";
 import { Shell } from "../ui/shell";
+import { GuidedJourney } from "../ui/guided-journey";
 const labels: Record<string, string> = {
   AVAILABLE: "Beslissing beschikbaar",
   FROZEN: "Verhoging geblokkeerd",
@@ -31,8 +32,8 @@ export default async function TodayPage() {
       eyebrow: "Controle vereist",
       title: "Dataprobleem blokkeert nieuwe exposure",
       body: "Controleer eerst de bron- of operationele fout. Risico reduceren blijft mogelijk; nieuwe exposure wordt niet verhoogd.",
-      href: "/research",
-      cta: "Inspecteer datakwaliteit",
+      href: "/allocation",
+      cta: "Bekijk waarom",
     };
   else if (!w.recommendation)
     action = {
@@ -40,8 +41,8 @@ export default async function TodayPage() {
       eyebrow: "Wachten op modelcyclus",
       title: "Nog geen allocatiebeslissing",
       body: "Je configuratie is compleet. Na de volgende succesvolle cyclus verschijnt hier een beoordeling.",
-      href: "/portfolio",
-      cta: "Controleer startportfolio",
+      href: "/paper",
+      cta: "Bekijk je testportfolio",
     };
   else if (w.recommendation.status !== "AVAILABLE")
     action = {
@@ -72,9 +73,10 @@ export default async function TodayPage() {
     };
   return (
     <Shell current="today">
+      <GuidedJourney current="today" />
       <header className="page-head">
         <div>
-          <span className="overline">Dagelijkse beslisroute</span>
+          <span className="overline">Stap 1 · wat speelt er?</span>
           <h1>Vandaag</h1>
           <p>
             Eén plek voor wat veranderde, wat aandacht vraagt en wat je zelf
@@ -100,7 +102,16 @@ export default async function TodayPage() {
           {action.cta}
         </Link>
       </section>
-      <section className="step-list">
+      <section className="panel guided-only simple-explainer">
+        <span className="overline">Zo gebruik je dit scherm</span>
+        <h2>Volg alleen de kaart hierboven</h2>
+        <p>
+          De app controleert de markt en je grenzen. Alleen wanneer een nieuwe
+          paperbeslissing klaarstaat ga je door naar stap 2. Je hoeft niet zelf
+          alle onderliggende metrics te combineren.
+        </p>
+      </section>
+      <section className="step-list advanced-only">
         <div className="step-item">
           <b>{w.mandate ? "✓" : "1"}</b>
           <div>
@@ -150,7 +161,7 @@ export default async function TodayPage() {
           <Link href="/paper">Volgen →</Link>
         </div>
       </section>
-      <section className="panel mandate-benchmarks">
+      <section className="panel mandate-benchmarks advanced-only">
         <div className="panel-head">
           <div>
             <span className="overline">Zo lees je statussen</span>
