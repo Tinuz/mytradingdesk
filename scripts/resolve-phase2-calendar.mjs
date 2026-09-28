@@ -20,7 +20,11 @@ try {
       and e.event_type = 'PROVIDER_FAILURE' and e.resolved_at is null
       and e.details->>'message' like '%unique or exclusion constraint%'
     returning e.id`;
-  console.log(JSON.stringify({ resolvedMisclassifiedPersistenceEvents: corrected.length }));
+  console.log(
+    JSON.stringify({
+      resolvedMisclassifiedPersistenceEvents: corrected.length,
+    }),
+  );
 } finally {
   await sql.end();
 }

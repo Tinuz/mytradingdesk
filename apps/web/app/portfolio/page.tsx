@@ -8,8 +8,14 @@ import { Shell } from "../ui/shell";
 import Link from "next/link";
 const n = (f: FormData, k: string) => Number(f.get(k));
 export default async function PortfolioPage() {
-  const { accounts, holdings, transactions, prices } = await portfolioOverview();
-  const exposures=holdings.map(h=>({...h,value:h.symbol==="CASH"?h.quantity:h.quantity*(prices[h.symbol]??0)})),total=exposures.reduce((s,x)=>s+x.value,0);
+  const { accounts, holdings, transactions, prices } =
+    await portfolioOverview();
+  const exposures = holdings.map((h) => ({
+      ...h,
+      value:
+        h.symbol === "CASH" ? h.quantity : h.quantity * (prices[h.symbol] ?? 0),
+    })),
+    total = exposures.reduce((s, x) => s + x.value, 0);
   async function addAccount(f: FormData) {
     "use server";
     await createPortfolioAccount({
@@ -48,7 +54,44 @@ export default async function PortfolioPage() {
         </div>
       </header>
       <section className="journal-grid">
-        <section className="panel"><div className="panel-head"><div><span className="overline">Exposure & concentration</span><h2>Actuele risicoblootstelling</h2></div><span>{total?`${total.toLocaleString("nl-NL",{maximumFractionDigits:0})} USD`:"prijzen ontbreken"}</span></div>{exposures.map(x=><article className="journal-entry" key={`${x.account_id}-${x.symbol}`}><div><strong>{x.symbol}</strong><span>{total?`${(x.value/total*100).toFixed(1)}%`:"—"}</span></div><p>{x.symbol==="CASH"?"liquiditeit / lage beta":x.symbol==="BTC"?"crypto monetary asset / hoge beta":"smart-contract ecosystem / hoge gecorreleerde beta"}</p></article>)}<p className="validation-warning">BTC/ETH-correlatie, beta, stressverlies en HHI worden point-in-time berekend in de allocation cockpit. Providerconcentratie staat onder Trust.</p></section>
+        <section className="panel">
+          <div className="panel-head">
+            <div>
+              <span className="overline">Exposure & concentration</span>
+              <h2>Actuele risicoblootstelling</h2>
+            </div>
+            <span>
+              {total
+                ? `${total.toLocaleString("nl-NL", { maximumFractionDigits: 0 })} USD`
+                : "prijzen ontbreken"}
+            </span>
+          </div>
+          {exposures.map((x) => (
+            <article
+              className="journal-entry"
+              key={`${x.account_id}-${x.symbol}`}
+            >
+              <div>
+                <strong>{x.symbol}</strong>
+                <span>
+                  {total ? `${((x.value / total) * 100).toFixed(1)}%` : "—"}
+                </span>
+              </div>
+              <p>
+                {x.symbol === "CASH"
+                  ? "liquiditeit / lage beta"
+                  : x.symbol === "BTC"
+                    ? "crypto monetary asset / hoge beta"
+                    : "smart-contract ecosystem / hoge gecorreleerde beta"}
+              </p>
+            </article>
+          ))}
+          <p className="validation-warning">
+            BTC/ETH-correlatie, beta, stressverlies en HHI worden point-in-time
+            berekend in de allocation cockpit. Providerconcentratie staat onder
+            Trust.
+          </p>
+        </section>
         <div>
           <form action={addAccount} className="panel journal-form">
             <div className="panel-head">

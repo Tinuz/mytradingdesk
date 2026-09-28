@@ -40,19 +40,17 @@ const [{ data: v1 }, { data: papers }, { count: critical }] = await Promise.all(
     .filter(([, ok]) => !ok)
     .map(([x]) => x),
   status = blockers.length ? "BLOCKED" : "PASSED";
-const { error } = await c
-  .from("capital_readiness_assessments")
-  .insert({
-    assessed_at: now.toISOString(),
-    protocol_version: protocol,
-    status,
-    gates,
-    blockers,
-    metrics: {
-      prospectiveMonths: months,
-      navDays: navCount ?? 0,
-      criticalDefects: critical ?? 0,
-    },
-  });
+const { error } = await c.from("capital_readiness_assessments").insert({
+  assessed_at: now.toISOString(),
+  protocol_version: protocol,
+  status,
+  gates,
+  blockers,
+  metrics: {
+    prospectiveMonths: months,
+    navDays: navCount ?? 0,
+    criticalDefects: critical ?? 0,
+  },
+});
 if (error) throw error;
 console.log(JSON.stringify({ status, gates, blockers }, null, 2));

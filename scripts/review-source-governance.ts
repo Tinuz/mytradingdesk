@@ -1,1 +1,64 @@
-import {createClient} from "@supabase/supabase-js";const req=(n:string)=>{const v=process.env[n];if(!v)throw new Error(`${n} missing`);return v};if(process.env.SOURCE_REVIEW_ACK!=="I_HAVE_REVIEWED_TERMS")throw new Error("Set SOURCE_REVIEW_ACK=I_HAVE_REVIEWED_TERMS only after an actual terms/licensing review");const providerName=req("SOURCE_PROVIDER"),approval=req("SOURCE_APPROVAL"),automation=req("SOURCE_AUTOMATION_RIGHTS"),storage=req("SOURCE_HISTORICAL_STORAGE_RIGHTS"),allowedApproval=new Set(["APPROVED","REJECTED"]),allowedRights=new Set(["ALLOWED","PROHIBITED"]);if(!allowedApproval.has(approval)||!allowedRights.has(automation)||!allowedRights.has(storage))throw new Error("Explicit APPROVED/REJECTED and ALLOWED/PROHIBITED values are required");const db=createClient(req("NEXT_PUBLIC_SUPABASE_URL"),req("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false}}),{data:provider,error}=await db.from("providers").select("id").eq("name",providerName).single();if(error)throw error;const now=new Date(),result=await db.from("source_governance").insert({provider_id:provider.id,version:`terms-review-${now.toISOString()}`,approval_status:approval,source_url:process.env.SOURCE_URL??null,terms_url:req("SOURCE_TERMS_URL"),automation_rights:automation,historical_storage_rights:storage,rate_limit:process.env.SOURCE_RATE_LIMIT??null,freshness_contract:req("SOURCE_FRESHNESS_CONTRACT"),fallback_policy:req("SOURCE_FALLBACK_POLICY"),reviewed_at:now.toISOString(),notes:req("SOURCE_REVIEW_NOTES")});if(result.error)throw result.error;console.log(JSON.stringify({provider:providerName,approval,automation,storage,reviewedAt:now.toISOString()},null,2));
+import { createClient } from "@supabase/supabase-js";
+const req = (n: string) => {
+  const v = process.env[n];
+  if (!v) throw new Error(`${n} missing`);
+  return v;
+};
+if (process.env.SOURCE_REVIEW_ACK !== "I_HAVE_REVIEWED_TERMS")
+  throw new Error(
+    "Set SOURCE_REVIEW_ACK=I_HAVE_REVIEWED_TERMS only after an actual terms/licensing review",
+  );
+const providerName = req("SOURCE_PROVIDER"),
+  approval = req("SOURCE_APPROVAL"),
+  automation = req("SOURCE_AUTOMATION_RIGHTS"),
+  storage = req("SOURCE_HISTORICAL_STORAGE_RIGHTS"),
+  allowedApproval = new Set(["APPROVED", "REJECTED"]),
+  allowedRights = new Set(["ALLOWED", "PROHIBITED"]);
+if (
+  !allowedApproval.has(approval) ||
+  !allowedRights.has(automation) ||
+  !allowedRights.has(storage)
+)
+  throw new Error(
+    "Explicit APPROVED/REJECTED and ALLOWED/PROHIBITED values are required",
+  );
+const db = createClient(
+    req("NEXT_PUBLIC_SUPABASE_URL"),
+    req("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false } },
+  ),
+  { data: provider, error } = await db
+    .from("providers")
+    .select("id")
+    .eq("name", providerName)
+    .single();
+if (error) throw error;
+const now = new Date(),
+  result = await db.from("source_governance").insert({
+    provider_id: provider.id,
+    version: `terms-review-${now.toISOString()}`,
+    approval_status: approval,
+    source_url: process.env.SOURCE_URL ?? null,
+    terms_url: req("SOURCE_TERMS_URL"),
+    automation_rights: automation,
+    historical_storage_rights: storage,
+    rate_limit: process.env.SOURCE_RATE_LIMIT ?? null,
+    freshness_contract: req("SOURCE_FRESHNESS_CONTRACT"),
+    fallback_policy: req("SOURCE_FALLBACK_POLICY"),
+    reviewed_at: now.toISOString(),
+    notes: req("SOURCE_REVIEW_NOTES"),
+  });
+if (result.error) throw result.error;
+console.log(
+  JSON.stringify(
+    {
+      provider: providerName,
+      approval,
+      automation,
+      storage,
+      reviewedAt: now.toISOString(),
+    },
+    null,
+    2,
+  ),
+);

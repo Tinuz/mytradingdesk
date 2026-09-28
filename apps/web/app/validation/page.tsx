@@ -1,4 +1,134 @@
-import{validationReplay}from"../../lib/data";import{Shell}from"../ui/shell";import{PointInTimeGate as PointInTimeIntegrity}from"./point-in-time";import{V1Gates}from"./v1-gates";
-const pct=(value:number|null|undefined)=>value==null?"Pending":`${value>=0?"+":""}${value.toFixed(1)}%`;
-const PointInTimeGate=()=> <><V1Gates/><PointInTimeIntegrity/></>;
-export default async function ValidationPage(){const replay=await validationReplay();return <Shell current="validation"><header className="page-head"><div><span className="overline">Evidence / no promotion</span><h1>Modelvalidatie</h1><p>Availability proof, gereconstrueerde outcomes en shadow-evidence.</p></div><div className="asof">Modelstatus<strong>UNVALIDATED</strong></div></header><PointInTimeGate/>{!replay?<div className="empty-state"><span>Geen replay</span><p>Voer <code>npm run validation:replay</code> uit.</p></div>:<><section className="trust-banner stale"><strong>{replay.replay_mode}</strong><span>{replay.from_date} → {replay.to_date} · {replay.evaluated_days} dagen · {replay.available_decisions} asset-dagpunten</span><em>Niet point-in-time; geen bewezen edge.</em></section><p className="validation-warning">Forward windows overlappen dagelijks. Het aantal observaties is geen aantal onafhankelijke samples en bewijst geen statistische significantie.</p><section className="validation-summary">{(["BTC","ETH"]as const).map(asset=><article className="panel" key={asset}><span className="overline">{asset} evidence</span><h2>{replay.metrics.whipsawsWithin14Days?.[asset]??0} whipsaws</h2><div className="metric-pair"><div><small>Buy & hold</small><strong>{pct(replay.metrics.buyHoldReturn?.[asset])}</strong></div><div><small>200DMA baseline</small><strong>{pct(replay.metrics.dma200BaselineReturn?.[asset])}</strong></div></div><div className="horizon-grid">{[30,90,180,365].map(horizon=>{const metric=replay.metrics.byAsset?.[asset]?.[String(horizon)];return <div key={horizon}><small>{horizon}d · overlappend n={metric?.samples??0}</small><strong>{pct(metric?.meanForwardReturn)}</strong><span>MAE {pct(metric?.meanAdverseExcursion)}</span></div>})}</div></article>)}</section><section className="panel validation-table"><div className="panel-head"><div><span className="overline">Decision-conditioned outcomes</span><h2>Uitkomst per modelstaat</h2></div><span>{replay.transition_count} transitions</span></div><div className="history-head"><span>Asset / state</span><span>Horizon</span><span>Observaties</span><span>Gem. return</span><span>Gem. MAE</span><span>Status</span></div>{Object.entries(replay.metrics.byDecision??{}).flatMap(([key,horizons])=>Object.entries(horizons).map(([horizon,metric])=><div className="history-row" key={`${key}-${horizon}`}><strong>{key}</strong><span>{horizon}d</span><span>{metric.samples}</span><span>{pct(metric.meanForwardReturn)}</span><span>{pct(metric.meanAdverseExcursion)}</span><span className="warning-badge">{metric.samples?"OVERLAPPING":"PENDING"}</span></div>))}</section><section className="panel limitations"><span className="overline">Mandatory caveats</span><h2>Beperkingen</h2>{replay.limitations.map(item=><p key={item}>— {item}</p>)}</section></>}</Shell>}
+import { validationReplay } from "../../lib/data";
+import { Shell } from "../ui/shell";
+import { PointInTimeGate as PointInTimeIntegrity } from "./point-in-time";
+import { V1Gates } from "./v1-gates";
+const pct = (value: number | null | undefined) =>
+  value == null ? "Pending" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+const PointInTimeGate = () => (
+  <>
+    <V1Gates />
+    <PointInTimeIntegrity />
+  </>
+);
+export default async function ValidationPage() {
+  const replay = await validationReplay();
+  return (
+    <Shell current="validation">
+      <header className="page-head">
+        <div>
+          <span className="overline">Evidence / no promotion</span>
+          <h1>Modelvalidatie</h1>
+          <p>
+            Availability proof, gereconstrueerde outcomes en shadow-evidence.
+          </p>
+        </div>
+        <div className="asof">
+          Modelstatus<strong>UNVALIDATED</strong>
+        </div>
+      </header>
+      <PointInTimeGate />
+      {!replay ? (
+        <div className="empty-state">
+          <span>Geen replay</span>
+          <p>
+            Voer <code>npm run validation:replay</code> uit.
+          </p>
+        </div>
+      ) : (
+        <>
+          <section className="trust-banner stale">
+            <strong>{replay.replay_mode}</strong>
+            <span>
+              {replay.from_date} → {replay.to_date} · {replay.evaluated_days}{" "}
+              dagen · {replay.available_decisions} asset-dagpunten
+            </span>
+            <em>Niet point-in-time; geen bewezen edge.</em>
+          </section>
+          <p className="validation-warning">
+            Forward windows overlappen dagelijks. Het aantal observaties is geen
+            aantal onafhankelijke samples en bewijst geen statistische
+            significantie.
+          </p>
+          <section className="validation-summary">
+            {(["BTC", "ETH"] as const).map((asset) => (
+              <article className="panel" key={asset}>
+                <span className="overline">{asset} evidence</span>
+                <h2>
+                  {replay.metrics.whipsawsWithin14Days?.[asset] ?? 0} whipsaws
+                </h2>
+                <div className="metric-pair">
+                  <div>
+                    <small>Buy & hold</small>
+                    <strong>
+                      {pct(replay.metrics.buyHoldReturn?.[asset])}
+                    </strong>
+                  </div>
+                  <div>
+                    <small>200DMA baseline</small>
+                    <strong>
+                      {pct(replay.metrics.dma200BaselineReturn?.[asset])}
+                    </strong>
+                  </div>
+                </div>
+                <div className="horizon-grid">
+                  {[30, 90, 180, 365].map((horizon) => {
+                    const metric =
+                      replay.metrics.byAsset?.[asset]?.[String(horizon)];
+                    return (
+                      <div key={horizon}>
+                        <small>
+                          {horizon}d · overlappend n={metric?.samples ?? 0}
+                        </small>
+                        <strong>{pct(metric?.meanForwardReturn)}</strong>
+                        <span>MAE {pct(metric?.meanAdverseExcursion)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </article>
+            ))}
+          </section>
+          <section className="panel validation-table">
+            <div className="panel-head">
+              <div>
+                <span className="overline">Decision-conditioned outcomes</span>
+                <h2>Uitkomst per modelstaat</h2>
+              </div>
+              <span>{replay.transition_count} transitions</span>
+            </div>
+            <div className="history-head">
+              <span>Asset / state</span>
+              <span>Horizon</span>
+              <span>Observaties</span>
+              <span>Gem. return</span>
+              <span>Gem. MAE</span>
+              <span>Status</span>
+            </div>
+            {Object.entries(replay.metrics.byDecision ?? {}).flatMap(
+              ([key, horizons]) =>
+                Object.entries(horizons).map(([horizon, metric]) => (
+                  <div className="history-row" key={`${key}-${horizon}`}>
+                    <strong>{key}</strong>
+                    <span>{horizon}d</span>
+                    <span>{metric.samples}</span>
+                    <span>{pct(metric.meanForwardReturn)}</span>
+                    <span>{pct(metric.meanAdverseExcursion)}</span>
+                    <span className="warning-badge">
+                      {metric.samples ? "OVERLAPPING" : "PENDING"}
+                    </span>
+                  </div>
+                )),
+            )}
+          </section>
+          <section className="panel limitations">
+            <span className="overline">Mandatory caveats</span>
+            <h2>Beperkingen</h2>
+            {replay.limitations.map((item) => (
+              <p key={item}>— {item}</p>
+            ))}
+          </section>
+        </>
+      )}
+    </Shell>
+  );
+}

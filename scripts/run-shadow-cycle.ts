@@ -1,7 +1,169 @@
-import{spawn}from"node:child_process";import{createClient}from"@supabase/supabase-js";
-const required=(name:string)=>{const value=process.env[name];if(!value)throw new Error(`${name} is missing`);return value};const client=createClient(required("NEXT_PUBLIC_SUPABASE_URL"),required("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false,autoRefreshToken:false}});const now=new Date();const day=now.toISOString().slice(0,10);const cycleKey=process.env.CYCLE_KEY??`shadow-${day}`;const trigger=process.env.GITHUB_ACTIONS?"SCHEDULED":"MANUAL";
-const{data:existing}=await client.from("pipeline_cycles").select("id,status,calculation_at,stages").eq("cycle_key",cycleKey).maybeSingle();if(existing?.status==="SUCCEEDED"){console.log(JSON.stringify({cycleKey,status:"ALREADY_SUCCEEDED"}));process.exit(0)}const calculationAt=existing?new Date(existing.calculation_at):now;const previousStages=(Array.isArray(existing?.stages)?existing.stages:[])as Array<Record<string,unknown>>;const initial={cycle_key:cycleKey,trigger_type:existing?"RETRY":trigger,status:"RUNNING",started_at:calculationAt.toISOString(),completed_at:null,heartbeat_at:new Date().toISOString(),calculation_at:calculationAt.toISOString(),failed_stage:null,error:null,stages:previousStages};const{data:cycle,error:startError}=existing?await client.from("pipeline_cycles").update(initial).eq("id",existing.id).select("id").single():await client.from("pipeline_cycles").insert(initial).select("id").single();if(startError)throw new Error(`${startError.code}: ${startError.message}`);
-const stages=[{name:"INGEST_CORE",script:"ingest-live.ts",retry:true},{name:"INGEST_V3",script:"ingest-v3-live.ts",retry:true},{name:"DERIVE",script:"derive-v3-indicators.ts",retry:false},{name:"QUALITY",script:"sync-quarantine-events.ts",retry:false},{name:"REGIMES",script:"evaluate-v3-regimes.ts",retry:false},{name:"DECISIONS",script:"evaluate-v3-decisions.ts",retry:false},{name:"ALERTS",script:"process-alerts.ts",args:["--live"],retry:false},{name:"TRUST",script:"capture-trust-observation.ts",retry:false},{name:"POINT_IN_TIME",script:"audit-point-in-time.ts",retry:false},{name:"V1_ASSESS",script:"assess-v1-gates.ts",retry:false}]as const;const results=[...previousStages];
-const execute=(stage:typeof stages[number])=>new Promise<{code:number;output:string}>((resolve)=>{const child=spawn(process.execPath,["node_modules/vite-node/vite-node.mjs",`scripts/${stage.script}`,...("args"in stage?stage.args:[])],{cwd:process.cwd(),env:{...process.env,CYCLE_CALCULATION_AT:calculationAt.toISOString()},stdio:["ignore","pipe","pipe"]});let output="";child.stdout.on("data",chunk=>output+=String(chunk));child.stderr.on("data",chunk=>output+=String(chunk));child.on("close",code=>resolve({code:code??1,output:output.slice(-4000)}))});
-try{for(const stage of stages){if(previousStages.some(result=>result.name===stage.name&&result.status==="SUCCEEDED"))continue;const began=Date.now();let attempt=0,result:{code:number;output:string};do{attempt++;result=await execute(stage);if(result.code&&stage.retry&&attempt<3)await new Promise(resolve=>setTimeout(resolve,attempt*2000))}while(result.code&&stage.retry&&attempt<3);const stageResult={name:stage.name,status:result.code===0?"SUCCEEDED":"FAILED",attempts:attempt,durationMs:Date.now()-began,output:result.output};const priorIndex=results.findIndex(value=>value.name===stage.name);if(priorIndex>=0)results.splice(priorIndex,1,stageResult);else results.push(stageResult);await client.from("pipeline_cycles").update({heartbeat_at:new Date().toISOString(),stages:results}).eq("id",cycle.id);if(result.code!==0)throw new Error(`${stage.name} failed after ${attempt} attempt(s)`)}await client.from("pipeline_cycles").update({status:"SUCCEEDED",completed_at:new Date().toISOString(),heartbeat_at:new Date().toISOString(),stages:results}).eq("id",cycle.id);console.log(JSON.stringify({cycleKey,status:"SUCCEEDED",stages:results.map(x=>({name:x.name,status:x.status,attempts:x.attempts,durationMs:x.durationMs}))},null,2));
-}catch(error){const message=error instanceof Error?error.message:"Unknown cycle failure";const failed=results.find(x=>x.status==="FAILED");await client.from("pipeline_cycles").update({status:"FAILED",completed_at:new Date().toISOString(),heartbeat_at:new Date().toISOString(),failed_stage:failed?.name,error:message,stages:results}).eq("id",cycle.id);throw error}
+import { spawn } from "node:child_process";
+import { createClient } from "@supabase/supabase-js";
+const required = (name: string) => {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is missing`);
+  return value;
+};
+const client = createClient(
+  required("NEXT_PUBLIC_SUPABASE_URL"),
+  required("SUPABASE_SERVICE_ROLE_KEY"),
+  { auth: { persistSession: false, autoRefreshToken: false } },
+);
+const now = new Date();
+const day = now.toISOString().slice(0, 10);
+const cycleKey = process.env.CYCLE_KEY ?? `shadow-${day}`;
+const trigger = process.env.GITHUB_ACTIONS ? "SCHEDULED" : "MANUAL";
+const { data: existing } = await client
+  .from("pipeline_cycles")
+  .select("id,status,calculation_at,stages")
+  .eq("cycle_key", cycleKey)
+  .maybeSingle();
+if (existing?.status === "SUCCEEDED") {
+  console.log(JSON.stringify({ cycleKey, status: "ALREADY_SUCCEEDED" }));
+  process.exit(0);
+}
+const calculationAt = existing ? new Date(existing.calculation_at) : now;
+const previousStages = (
+  Array.isArray(existing?.stages) ? existing.stages : []
+) as Array<Record<string, unknown>>;
+const initial = {
+  cycle_key: cycleKey,
+  trigger_type: existing ? "RETRY" : trigger,
+  status: "RUNNING",
+  started_at: calculationAt.toISOString(),
+  completed_at: null,
+  heartbeat_at: new Date().toISOString(),
+  calculation_at: calculationAt.toISOString(),
+  failed_stage: null,
+  error: null,
+  stages: previousStages,
+};
+const { data: cycle, error: startError } = existing
+  ? await client
+      .from("pipeline_cycles")
+      .update(initial)
+      .eq("id", existing.id)
+      .select("id")
+      .single()
+  : await client.from("pipeline_cycles").insert(initial).select("id").single();
+if (startError) throw new Error(`${startError.code}: ${startError.message}`);
+const stages = [
+  { name: "INGEST_CORE", script: "ingest-live.ts", retry: true },
+  { name: "INGEST_V3", script: "ingest-v3-live.ts", retry: true },
+  { name: "DERIVE", script: "derive-v3-indicators.ts", retry: false },
+  { name: "QUALITY", script: "sync-quarantine-events.ts", retry: false },
+  { name: "REGIMES", script: "evaluate-v3-regimes.ts", retry: false },
+  { name: "DECISIONS", script: "evaluate-v3-decisions.ts", retry: false },
+  {
+    name: "ALERTS",
+    script: "process-alerts.ts",
+    args: ["--live"],
+    retry: false,
+  },
+  { name: "TRUST", script: "capture-trust-observation.ts", retry: false },
+  { name: "POINT_IN_TIME", script: "audit-point-in-time.ts", retry: false },
+  { name: "V1_ASSESS", script: "assess-v1-gates.ts", retry: false },
+] as const;
+const results = [...previousStages];
+const execute = (stage: (typeof stages)[number]) =>
+  new Promise<{ code: number; output: string }>((resolve) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "node_modules/vite-node/vite-node.mjs",
+        `scripts/${stage.script}`,
+        ...("args" in stage ? stage.args : []),
+      ],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          CYCLE_CALCULATION_AT: calculationAt.toISOString(),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let output = "";
+    child.stdout.on("data", (chunk) => (output += String(chunk)));
+    child.stderr.on("data", (chunk) => (output += String(chunk)));
+    child.on("close", (code) =>
+      resolve({ code: code ?? 1, output: output.slice(-4000) }),
+    );
+  });
+try {
+  for (const stage of stages) {
+    if (
+      previousStages.some(
+        (result) => result.name === stage.name && result.status === "SUCCEEDED",
+      )
+    )
+      continue;
+    const began = Date.now();
+    let attempt = 0,
+      result: { code: number; output: string };
+    do {
+      attempt++;
+      result = await execute(stage);
+      if (result.code && stage.retry && attempt < 3)
+        await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    } while (result.code && stage.retry && attempt < 3);
+    const stageResult = {
+      name: stage.name,
+      status: result.code === 0 ? "SUCCEEDED" : "FAILED",
+      attempts: attempt,
+      durationMs: Date.now() - began,
+      output: result.output,
+    };
+    const priorIndex = results.findIndex((value) => value.name === stage.name);
+    if (priorIndex >= 0) results.splice(priorIndex, 1, stageResult);
+    else results.push(stageResult);
+    await client
+      .from("pipeline_cycles")
+      .update({ heartbeat_at: new Date().toISOString(), stages: results })
+      .eq("id", cycle.id);
+    if (result.code !== 0)
+      throw new Error(`${stage.name} failed after ${attempt} attempt(s)`);
+  }
+  await client
+    .from("pipeline_cycles")
+    .update({
+      status: "SUCCEEDED",
+      completed_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      stages: results,
+    })
+    .eq("id", cycle.id);
+  console.log(
+    JSON.stringify(
+      {
+        cycleKey,
+        status: "SUCCEEDED",
+        stages: results.map((x) => ({
+          name: x.name,
+          status: x.status,
+          attempts: x.attempts,
+          durationMs: x.durationMs,
+        })),
+      },
+      null,
+      2,
+    ),
+  );
+} catch (error) {
+  const message =
+    error instanceof Error ? error.message : "Unknown cycle failure";
+  const failed = results.find((x) => x.status === "FAILED");
+  await client
+    .from("pipeline_cycles")
+    .update({
+      status: "FAILED",
+      completed_at: new Date().toISOString(),
+      heartbeat_at: new Date().toISOString(),
+      failed_stage: failed?.name,
+      error: message,
+      stages: results,
+    })
+    .eq("id", cycle.id);
+  throw error;
+}

@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { PHASE_ONE_INDICATORS, type
-  DataContract,
+import {
+  PHASE_ONE_INDICATORS,
+  type DataContract,
   ProviderObservation,
   StoredRawObservation,
 } from "./types";

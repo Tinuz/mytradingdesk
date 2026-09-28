@@ -40,7 +40,15 @@ for (const portfolio of portfolios ?? []) {
     });
     continue;
   }
-  const {data:trades,error:tradeError}=await db.from("paper_trades").select("quantity,price,fee,slippage,recommendation_id,allocation_recommendations!inner(analyst_signoffs(action))").eq("paper_portfolio_id",portfolio.id).gte("executed_at",rows[0].calculated_at).lte("executed_at",rows.at(-1)!.calculated_at);if(tradeError)throw tradeError;
+  const { data: trades, error: tradeError } = await db
+    .from("paper_trades")
+    .select(
+      "quantity,price,fee,slippage,recommendation_id,allocation_recommendations!inner(analyst_signoffs(action))",
+    )
+    .eq("paper_portfolio_id", portfolio.id)
+    .gte("executed_at", rows[0].calculated_at)
+    .lte("executed_at", rows.at(-1)!.calculated_at);
+  if (tradeError) throw tradeError;
   const navs = rows.map((r) => Number(r.nav)),
     returns = navs.slice(1).map((v, i) => pct(v, navs[i]!)),
     down = returns.filter((x) => x < 0),
@@ -82,7 +90,25 @@ for (const portfolio of portfolios ?? []) {
         v === null ? null : pct(Number(v), navs[0]!),
       ]),
     ),
-    fees=(trades??[]).reduce((s,t)=>s+Number(t.fee)+Number(t.slippage),0),turnover=(trades??[]).reduce((s,t)=>s+Number(t.quantity)*Number(t.price),0)/navs[0]!,strategyReturn=pct(navs.at(-1)!,navs[0]!),staticReturn=Number(benchmarkReturns.BTC_ETH_60_40??0),cashBenchmarkReturn=Number(benchmarkReturns.BTC_CASH_50_50??0),humanOverrides=(trades??[]).filter(t=>(t.allocation_recommendations as unknown as {analyst_signoffs:Array<{action:string}>})?.analyst_signoffs?.some(x=>x.action==="MODIFY")).length;
+    fees = (trades ?? []).reduce(
+      (s, t) => s + Number(t.fee) + Number(t.slippage),
+      0,
+    ),
+    turnover =
+      (trades ?? []).reduce(
+        (s, t) => s + Number(t.quantity) * Number(t.price),
+        0,
+      ) / navs[0]!,
+    strategyReturn = pct(navs.at(-1)!, navs[0]!),
+    staticReturn = Number(benchmarkReturns.BTC_ETH_60_40 ?? 0),
+    cashBenchmarkReturn = Number(benchmarkReturns.BTC_CASH_50_50 ?? 0),
+    humanOverrides = (trades ?? []).filter((t) =>
+      (
+        t.allocation_recommendations as unknown as {
+          analyst_signoffs: Array<{ action: string }>;
+        }
+      )?.analyst_signoffs?.some((x) => x.action === "MODIFY"),
+    ).length;
   const metrics = {
     sampleDays: rows.length,
     totalReturn: strategyReturn,
@@ -104,12 +130,12 @@ for (const portfolio of portfolios ?? []) {
   };
   const attribution = {
     strategicAllocation: staticReturn,
-    tacticalRegimeResidual: strategyReturn-staticReturn+fees/navs[0]!,
+    tacticalRegimeResidual: strategyReturn - staticReturn + fees / navs[0]!,
     valuation: null,
     assetSelection: null,
     humanOverrideCount: humanOverrides,
-    costs: -fees/navs[0]!,
-    cashDragRelativeToStatic: cashBenchmarkReturn-staticReturn,
+    costs: -fees / navs[0]!,
+    cashDragRelativeToStatic: cashBenchmarkReturn - staticReturn,
     status: "RESIDUAL_ATTRIBUTION_UNTIL_FACTOR_SAMPLE_IS_SUFFICIENT",
   };
   const calibration = {

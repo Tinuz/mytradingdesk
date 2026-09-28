@@ -58,23 +58,21 @@ for (const s of latest.values()) {
     metrics = portfolioRisk(returns, weights),
     warnings =
       metrics.observations < 90 ? ["LESS_THAN_90_RETURN_OBSERVATIONS"] : [];
-  const { error } = await c
-    .from("portfolio_risk_snapshots")
-    .upsert(
-      {
-        user_id: s.user_id,
-        portfolio_snapshot_id: s.id,
-        calculated_at: at.toISOString(),
-        methodology_version: "portfolio-risk-v1",
-        metrics,
-        binding_constraints: [],
-        warnings,
-      },
-      {
-        onConflict: "portfolio_snapshot_id,methodology_version",
-        ignoreDuplicates: true,
-      },
-    );
+  const { error } = await c.from("portfolio_risk_snapshots").upsert(
+    {
+      user_id: s.user_id,
+      portfolio_snapshot_id: s.id,
+      calculated_at: at.toISOString(),
+      methodology_version: "portfolio-risk-v1",
+      metrics,
+      binding_constraints: [],
+      warnings,
+    },
+    {
+      onConflict: "portfolio_snapshot_id,methodology_version",
+      ignoreDuplicates: true,
+    },
+  );
   if (error) throw error;
   out.push({ user: s.user_id, metrics });
 }

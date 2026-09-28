@@ -27,7 +27,16 @@ const [{ data: userPage, error: ue }, { data: sourceGate, error: se }] =
   ]);
 if (ue) throw ue;
 if (se) throw se;
-const {data:methodologies,error:me}=await c.from("methodology_versions").select("methodology_type,version,status").in("version",["allocation-policy-v1-shadow.1","risk-policy-v1-shadow.1"]);if(me)throw me;const methodologyApproved=(methodologies??[]).length===2&&(methodologies??[]).every(x=>x.status==="SHADOW"||x.status==="VALIDATED");
+const { data: methodologies, error: me } = await c
+  .from("methodology_versions")
+  .select("methodology_type,version,status")
+  .in("version", ["allocation-policy-v1-shadow.1", "risk-policy-v1-shadow.1"]);
+if (me) throw me;
+const methodologyApproved =
+  (methodologies ?? []).length === 2 &&
+  (methodologies ?? []).every(
+    (x) => x.status === "SHADOW" || x.status === "VALIDATED",
+  );
 const unapproved = (sourceGate ?? []).filter(
     (x) =>
       x.approval_status !== "APPROVED" ||
@@ -147,7 +156,8 @@ for (const user of userPage.users) {
       .maybeSingle();
   if (!dataApproved)
     result.warnings.push(...unapproved.map((x) => `SOURCE_GATE:${x.code}`));
-  if(!methodologyApproved)result.warnings.push("METHODOLOGY_VERSION_NOT_ACTIVE");
+  if (!methodologyApproved)
+    result.warnings.push("METHODOLOGY_VERSION_NOT_ACTIVE");
   if (operationalFreeze)
     result.warnings.push(
       ...(criticalEvents ?? []).map(

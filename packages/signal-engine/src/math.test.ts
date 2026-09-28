@@ -2,8 +2,20 @@ import { describe, expect, it } from "vitest";
 import { aggregate } from "./math";
 import type { FactorResult } from "./types";
 
-function factor(code: string, family: FactorResult["family"], score: NonNullable<FactorResult["score"]>): FactorResult {
-  return { code, family, score, timing: "CONFIRMING", rawValue: score, description: code, status: "VALID" };
+function factor(
+  code: string,
+  family: FactorResult["family"],
+  score: NonNullable<FactorResult["score"]>,
+): FactorResult {
+  return {
+    code,
+    family,
+    score,
+    timing: "CONFIRMING",
+    rawValue: score,
+    description: code,
+    status: "VALID",
+  };
 }
 
 describe("factor-family aggregation", () => {

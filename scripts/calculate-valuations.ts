@@ -55,7 +55,32 @@ for (const asset of assets ?? []) {
       evidence_status: "HYPOTHESIS",
       warnings: ["Cycle multiples are uncalibrated hypotheses"],
     });
-    const history=await series("BTC_USD",2500),daily=new Map<string,{id:string;value:number}>();for(const x of history)daily.set(x.at.slice(0,10),x);const last=[...daily.values()].slice(0,200);if(last.length===200){const mean=last.reduce((s,x)=>s+x.value,0)/last.length;rows.push({asset_id:asset.id,calculated_at:at.toISOString(),methodology_version:"btc-200dma-anchor-v1-hypothesis",fair_value_low:mean*.75,fair_value_base:mean,fair_value_high:mean*1.5,current_price:btc.value,components:{dma200:mean,bands:[.75,1,1.5],family:"MARKET_ANCHOR"},input_observation_ids:[btc.id,...last.map(x=>x.id)],evidence_status:"HYPOTHESIS",warnings:["Independent market anchor, not an on-chain intrinsic valuation family"]})}
+    const history = await series("BTC_USD", 2500),
+      daily = new Map<string, { id: string; value: number }>();
+    for (const x of history) daily.set(x.at.slice(0, 10), x);
+    const last = [...daily.values()].slice(0, 200);
+    if (last.length === 200) {
+      const mean = last.reduce((s, x) => s + x.value, 0) / last.length;
+      rows.push({
+        asset_id: asset.id,
+        calculated_at: at.toISOString(),
+        methodology_version: "btc-200dma-anchor-v1-hypothesis",
+        fair_value_low: mean * 0.75,
+        fair_value_base: mean,
+        fair_value_high: mean * 1.5,
+        current_price: btc.value,
+        components: {
+          dma200: mean,
+          bands: [0.75, 1, 1.5],
+          family: "MARKET_ANCHOR",
+        },
+        input_observation_ids: [btc.id, ...last.map((x) => x.id)],
+        evidence_status: "HYPOTHESIS",
+        warnings: [
+          "Independent market anchor, not an on-chain intrinsic valuation family",
+        ],
+      });
+    }
   } else if (asset.symbol === "ETH") {
     const history = await series("ETH_USD", 2500),
       daily = new Map<string, { id: string; value: number }>();
