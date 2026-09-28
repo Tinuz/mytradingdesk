@@ -168,4 +168,11 @@ export const INVESTMENT_REGIME_LABELS_NL: Record<InvestmentRegime, string> = {
   DEFENSIVE: "Defensief",
 };
 
+/**
+ * Active methodology for recommendation outcomes. Readers filter on it so
+ * rows written under a superseded methodology are never mixed in.
+ */
+export const RECOMMENDATION_OUTCOME_VERSION =
+  "recommendation-outcome-v2" as const;
+
 export * from "./portfolio";

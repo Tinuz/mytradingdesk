@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { allocateShadowPortfolio } from "@cmip/signal-engine";
+import { listAllUsers } from "./lib/runtime";
 import type {
   AssetSymbol,
   InvestmentRegime,
@@ -16,16 +17,12 @@ const req = (n: string) => {
     { auth: { persistSession: false } },
   ),
   at = new Date(process.env.CYCLE_CALCULATION_AT ?? Date.now());
-const [{ data: userPage, error: ue }, { data: sourceGate, error: se }] =
-  await Promise.all([
-    c.auth.admin.listUsers(),
-    c
-      .from("allocation_source_gate")
-      .select(
-        "code,approval_status,automation_rights,historical_storage_rights",
-      ),
-  ]);
-if (ue) throw ue;
+const [users, { data: sourceGate, error: se }] = await Promise.all([
+  listAllUsers(c),
+  c
+    .from("allocation_source_gate")
+    .select("code,approval_status,automation_rights,historical_storage_rights"),
+]);
 if (se) throw se;
 const { data: methodologies, error: me } = await c
   .from("methodology_versions")
@@ -51,7 +48,7 @@ const { data: criticalEvents } = await c
     .is("resolved_at", null)
     .in("severity", ["CRITICAL", "HIGH"]),
   operationalFreeze = (criticalEvents?.length ?? 0) > 0;
-for (const user of userPage.users) {
+for (const user of users) {
   const { data: mandate } = await c
     .from("investor_mandates")
     .select("*")

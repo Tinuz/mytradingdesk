@@ -2,7 +2,10 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { parsePortfolioCsv } from "@cmip/domain";
+import {
+  parsePortfolioCsv,
+  RECOMMENDATION_OUTCOME_VERSION,
+} from "@cmip/domain";
 
 export interface Factor {
   code: string;
@@ -272,6 +275,8 @@ export interface IndicatorSeries {
   source_type: "CANONICAL" | "DERIVED";
   points: Array<{ date: string; value: number; quality: string }>;
 }
+/** PostgREST returns at most this many rows per request. */
+const PAGE_SIZE = 1_000;
 async function database() {
   const store = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -1497,10 +1502,14 @@ export async function addThesisEvidence(input: {
 export async function productExperience() {
   const client = await database();
   if (!client) return null;
-  const { data } = await client
+  const { data, error } = await client
     .from("user_product_settings")
     .select("*")
     .maybeSingle();
+  if (error) {
+    handleQueryError("user_product_settings", error);
+    throw new Error("Productinstellingen konden niet worden geladen");
+  }
   return data;
 }
 export async function completeGuidedOnboarding(input: {
@@ -1573,6 +1582,20 @@ export async function todayWorkspace() {
         .limit(1)
         .maybeSingle(),
     ]);
+  // Without settings the page would wrongly send the user to onboarding, so a
+  // failed settings query must surface as an error instead.
+  if (settings.error) {
+    handleQueryError("user_product_settings", settings.error);
+    throw new Error("Productinstellingen konden niet worden geladen");
+  }
+  for (const [source, result] of [
+    ["current_investor_mandate", mandate],
+    ["allocation_recommendations", recommendation],
+    ["data_quality_events", events],
+    ["asset_theses", theses],
+    ["paper_nav", paper],
+  ] as const)
+    if (result.error) handleQueryError(source, result.error);
   let signoff = null;
   if (recommendation.data) {
     const result = await client
@@ -1676,6 +1699,7 @@ export async function validationLearningWorkspace() {
       .select(
         "*,allocation_recommendations(calculated_at,status,analyst_signoffs(action))",
       )
+      .eq("calculation_version", RECOMMENDATION_OUTCOME_VERSION)
       .order("observed_at", { ascending: false })
       .limit(500),
     client
@@ -1701,18 +1725,27 @@ export async function dashboardHistory() {
     if (runError) handleQueryError("validation_replay_latest", runError);
     return [];
   }
-  const { data, error } = await client
-    .from("validation_replay_points")
-    .select(
-      "evaluation_date,decision_state,macro_state,macro_score,crypto_state,crypto_score,market_structure_state,market_structure_score,asset_state,asset_score,price,dma_200,transitioned,assets(symbol)",
-    )
-    .eq("replay_run_id", run.id)
-    .order("evaluation_date");
-  if (error) {
-    handleQueryError("validation_replay_points", error);
-    return [];
+  // The replay spans years for two assets, which exceeds a single PostgREST
+  // page; the timeline's MAX range needs every row.
+  const data: unknown[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error } = await client
+      .from("validation_replay_points")
+      .select(
+        "evaluation_date,decision_state,macro_state,macro_score,crypto_state,crypto_score,market_structure_state,market_structure_score,asset_state,asset_score,price,dma_200,transitioned,assets(symbol)",
+      )
+      .eq("replay_run_id", run.id)
+      .order("evaluation_date")
+      .order("asset_id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      handleQueryError("validation_replay_points", error);
+      return [];
+    }
+    data.push(...(page ?? []));
+    if (!page || page.length < PAGE_SIZE) break;
   }
-  return data as unknown as DashboardHistoryPoint[];
+  return data as DashboardHistoryPoint[];
 }
 
 export async function indicatorSeries(codes: readonly string[]) {
@@ -1738,15 +1771,15 @@ export async function indicatorSeries(codes: readonly string[]) {
           .select("observed_at,value,quality_status")
           .eq("indicator_id", indicator.id)
           .not("value", "is", null)
-          .order("observed_at")
-          .limit(2000),
+          .order("observed_at", { ascending: false })
+          .limit(PAGE_SIZE),
         client
           .from("indicator_snapshots")
           .select("calculated_at,raw_value,calculation_version")
           .eq("indicator_id", indicator.id)
           .not("raw_value", "is", null)
-          .order("calculated_at")
-          .limit(2000),
+          .order("calculated_at", { ascending: false })
+          .limit(PAGE_SIZE),
       ]);
       if (canonical.error || derived.error) {
         handleQueryError(
@@ -1755,12 +1788,16 @@ export async function indicatorSeries(codes: readonly string[]) {
         );
         return null;
       }
-      const canonicalPoints = (canonical.data ?? []).map((row) => ({
-        date: row.observed_at,
-        value: Number(row.value),
-        quality: row.quality_status,
-      }));
-      const derivedPoints = (derived.data ?? []).map((row) => ({
+      // Queried newest-first so long histories keep their latest points;
+      // charts expect ascending order.
+      const canonicalPoints = [...(canonical.data ?? [])]
+        .reverse()
+        .map((row) => ({
+          date: row.observed_at,
+          value: Number(row.value),
+          quality: row.quality_status,
+        }));
+      const derivedPoints = [...(derived.data ?? [])].reverse().map((row) => ({
         date: row.calculated_at,
         value: Number(row.raw_value),
         quality: row.calculation_version,

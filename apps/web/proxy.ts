@@ -33,6 +33,7 @@ export const config = {
     "/onboarding/:path*",
     "/dashboard/:path*",
     "/assets/:path*",
+    "/indicators/:path*",
     "/research/:path*",
     "/history/:path*",
     "/allocation/:path*",

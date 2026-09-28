@@ -11,6 +11,8 @@ export * from "./validation";
 export * from "./availability";
 export * from "./allocation";
 export * from "./portfolio-risk";
+export * from "./paper";
+export * from "./outcomes";
 
 export const SIGNAL_ENGINE_PACKAGE = "@cmip/signal-engine" as const;
 /** @deprecated Status of the replayable v2 engine. */

@@ -40,7 +40,9 @@ try {
     client
       .from("decision_snapshots")
       .select("id", { count: "exact", head: true })
-      .not("previous_state", "is", null),
+      // previous_state is set on every non-initial snapshot; only these
+      // reasons mean the decision state actually changed.
+      .in("transition_reason", ["PERSISTENCE_CONFIRMED", "SHOCK_OVERRIDE"]),
     client.from("alerts").select("id", { count: "exact", head: true }),
     client
       .from("ingestion_runs")
