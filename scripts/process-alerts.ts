@@ -7,7 +7,7 @@ import {
   type AlertType,
   type RecentAlert,
 } from "@cmip/notifications";
-import { listAllUsers } from "./lib/runtime";
+import { fetchAllPages, listAllUsers } from "./lib/runtime";
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is missing`);
@@ -58,12 +58,16 @@ const decisionColumns =
   "id,calculated_at,symbol,decision_state,macro_score,crypto_score,market_structure_state,asset_score,risk_override";
 for (const asset of assets ?? []) {
   const [live, before] = await Promise.all([
-    client
-      .from("decision_experience")
-      .select(decisionColumns)
-      .eq("symbol", asset.symbol)
-      .gte("calculated_at", state.live_since)
-      .order("calculated_at", { ascending: true }),
+    fetchAllPages((from, to) =>
+      client
+        .from("decision_experience")
+        .select(decisionColumns)
+        .eq("symbol", asset.symbol)
+        .gte("calculated_at", state.live_since)
+        .order("calculated_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
     // The snapshot just before the watermark is the baseline for the first
     // live snapshot; it never produces an alert itself.
     client
@@ -75,10 +79,9 @@ for (const asset of assets ?? []) {
       .limit(1)
       .maybeSingle(),
   ]);
-  if (live.error) throw live.error;
   if (before.error) throw before.error;
   let previous = before.data as DecisionRow | null;
-  for (const current of (live.data as DecisionRow[]) ?? []) {
+  for (const current of live as DecisionRow[]) {
     if (previous) {
       const candidate = decisionAlert(
         {

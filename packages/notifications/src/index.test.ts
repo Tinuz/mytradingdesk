@@ -138,4 +138,79 @@ describe("alert engine", () => {
       decisionAlert({ ...persisting, assetScore: 0 }, "LIVE"),
     ).toMatchObject({ alertType: "REGIME_CHANGE", severity: "INFO" });
   });
+  it("treats a move between the two extreme structures as critical", () => {
+    const base = {
+      ...transition,
+      previousDecision: "NEUTRAL",
+      decision: "NEUTRAL",
+      previousMacroScore: 0,
+      macroScore: 0,
+      previousCryptoScore: 0,
+      cryptoScore: 0,
+      previousAssetScore: 0,
+      assetScore: 0,
+    };
+    expect(
+      decisionAlert(
+        {
+          ...base,
+          previousMarketStructure: "OVERHEATED",
+          marketStructure: "CAPITULATION",
+        },
+        "LIVE",
+      ),
+    ).toMatchObject({
+      alertType: "MARKET_STRUCTURE_RISK",
+      severity: "CRITICAL",
+    });
+  });
+  it("alerts on an escalated override but not on a de-escalation", () => {
+    const base = {
+      ...transition,
+      previousDecision: "NEUTRAL",
+      decision: "NEUTRAL",
+      previousMacroScore: 1,
+      macroScore: 1,
+      previousCryptoScore: 1,
+      cryptoScore: 1,
+      previousAssetScore: 0,
+      assetScore: 0,
+      previousMarketStructure: "STRESSED",
+      marketStructure: "STRESSED",
+    };
+    expect(
+      decisionAlert(
+        {
+          ...base,
+          previousRiskOverride: "STRESS_CAP",
+          riskOverride: "CAPITULATION_CAP",
+        },
+        "LIVE",
+      ),
+    ).toMatchObject({ severity: "CRITICAL" });
+    expect(
+      decisionAlert(
+        {
+          ...base,
+          previousRiskOverride: "CAPITULATION_CAP",
+          riskOverride: "STRESS_CAP",
+        },
+        "LIVE",
+      ),
+    ).toBeNull();
+  });
+  it("keeps a decision change during an extreme structure critical", () => {
+    expect(
+      decisionAlert(
+        {
+          ...transition,
+          previousMarketStructure: "CAPITULATION",
+          marketStructure: "CAPITULATION",
+          previousRiskOverride: "CAPITULATION_CAP",
+          riskOverride: "CAPITULATION_CAP",
+        },
+        "LIVE",
+      ),
+    ).toMatchObject({ alertType: "DECISION_CHANGE", severity: "CRITICAL" });
+  });
 });

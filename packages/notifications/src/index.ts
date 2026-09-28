@@ -72,6 +72,12 @@ const marketRisk: Record<string, number> = {
   CAPITULATION: 2,
   OVERHEATED: 2,
 };
+const overrideRank: Record<string, number> = {
+  NONE: 0,
+  OVERHEAT_CAP: 1,
+  STRESS_CAP: 1,
+  CAPITULATION_CAP: 2,
+};
 const direction = (before: number, after: number): AlertDirection =>
   after > before ? "IMPROVING" : after < before ? "DETERIORATING" : "CHANGED";
 export function decisionAlert(
@@ -95,12 +101,20 @@ export function decisionAlert(
   const decisionChanged = input.previousDecision !== input.decision;
   const riskBefore = marketRisk[input.previousMarketStructure] ?? 0;
   const riskAfter = marketRisk[input.marketStructure] ?? 0;
-  // Only a newly activated override is material; a persisting one would
-  // otherwise raise a critical alert on every evaluation.
-  const overrideActivated =
-    input.riskOverride !== "NONE" &&
-    input.riskOverride !== input.previousRiskOverride;
-  const riskChanged = riskBefore !== riskAfter || overrideActivated;
+  // A persisting override is not material, nor is a de-escalation; only a
+  // new or escalated override is. Otherwise a stress cap that stays active
+  // would raise a critical alert on every evaluation.
+  const overrideEscalated =
+    input.riskOverride !== input.previousRiskOverride &&
+    (overrideRank[input.riskOverride] ?? 0) > 0 &&
+    (overrideRank[input.riskOverride] ?? 0) >=
+      (overrideRank[input.previousRiskOverride] ?? 0);
+  // Moving between the two extremes (OVERHEATED <-> CAPITULATION) is a risk
+  // change even though both share the highest risk rank.
+  const enteredExtreme =
+    riskAfter === 2 && input.previousMarketStructure !== input.marketStructure;
+  const riskChanged =
+    riskBefore !== riskAfter || enteredExtreme || overrideEscalated;
   if (!decisionChanged && !riskChanged && changes.length === 0) return null;
   const alertType: AlertType = decisionChanged
     ? "DECISION_CHANGE"
@@ -116,7 +130,7 @@ export function decisionAlert(
       ? direction(riskAfter, riskBefore)
       : "CHANGED";
   const severity: AlertSeverity =
-    overrideActivated || (riskAfter === 2 && riskBefore !== 2)
+    overrideEscalated || enteredExtreme || (decisionChanged && riskAfter === 2)
       ? "CRITICAL"
       : alertDirection === "DETERIORATING"
         ? "WARNING"
@@ -134,7 +148,7 @@ export function decisionAlert(
     title,
     message: changes.length
       ? changes.join("; ")
-      : overrideActivated
+      : overrideEscalated
         ? `Risk override: ${input.riskOverride}`
         : "Materiële modelwijziging.",
     occurredAt: input.occurredAt,

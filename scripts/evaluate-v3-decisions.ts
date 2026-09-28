@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
   V3_DECISION_CONFIG,
+  V3_DECISION_MEMORY_VERSIONS,
   V3_REGIME_CONFIG,
   evaluateV3Decision,
   type RegimeResult,
@@ -80,12 +81,7 @@ for (const asset of assets ?? []) {
     .from("decision_snapshots")
     .select("decision_state,pending_state,consecutive_observations")
     .eq("asset_id", asset.id)
-    // Transition memory carries across v3 decision engine versions.
-    .in("engine_version", [
-      V3_DECISION_CONFIG.version,
-      "0.6.2-hypothesis.1",
-      "0.6.1-hypothesis.1",
-    ])
+    .in("engine_version", [...V3_DECISION_MEMORY_VERSIONS])
     .order("calculated_at", { ascending: false })
     .limit(1)
     .maybeSingle();

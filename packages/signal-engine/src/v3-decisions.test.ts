@@ -8,6 +8,8 @@ import type {
 } from "@cmip/domain";
 import {
   configuredV3Decision,
+  V3_DECISION_CONFIG,
+  V3_DECISION_MEMORY_VERSIONS,
   evaluateV3Decision,
   V3_DECISION_MATRIX,
 } from "./v3-decisions";
@@ -208,7 +210,54 @@ describe("v3 decision matrix", () => {
     expect(result.state).toBe("RISK_REDUCTION");
     expect(result.transitionReason).not.toBe("STRESS_CAP_APPLIED");
   });
-  it("holds every positive state at or below the stress ceiling", () => {
+  it("does not delay a confirming downgrade while applying the cap", () => {
+    // The second RISK_REDUCTION observation confirms, as it would without
+    // stress; stress must never make the outcome less defensive.
+    const confirmed = evaluateV3Decision({
+      ...input(-1, -1, -1, 0),
+      memory: {
+        currentState: "ACCUMULATION",
+        pendingState: "RISK_REDUCTION",
+        consecutiveObservations: 1,
+      },
+    });
+    expect(confirmed).toMatchObject({
+      state: "RISK_REDUCTION",
+      transitionReason: "PERSISTENCE_CONFIRMED",
+    });
+    const defensive = evaluateV3Decision({
+      ...input(-2, -2, -2, -2),
+      memory: {
+        currentState: "STRONG_ACCUMULATION",
+        pendingState: "DEFENSIVE",
+        consecutiveObservations: 1,
+      },
+    });
+    expect(defensive.state).toBe("DEFENSIVE");
+    // A first downgrade observation is capped now and keeps its count.
+    const first = evaluateV3Decision({
+      ...input(-1, -1, -1, 0),
+      memory: {
+        currentState: "ACCUMULATION",
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    });
+    expect(first).toMatchObject({
+      state: "NEUTRAL",
+      transitionReason: "STRESS_CAP_APPLIED",
+      memory: {
+        currentState: "NEUTRAL",
+        pendingState: "RISK_REDUCTION",
+        consecutiveObservations: 1,
+      },
+    });
+    expect(
+      evaluateV3Decision({ ...input(-1, -1, -1, 0), memory: first.memory })
+        .state,
+    ).toBe("RISK_REDUCTION");
+  });
+  it("keeps every result at or below the stress ceiling for any memory", () => {
     const ceiling: Record<number, number> = {
       [-2]: 0,
       [-1]: 0,
@@ -223,21 +272,40 @@ describe("v3 decision matrix", () => {
       ACCUMULATION: 1,
       STRONG_ACCUMULATION: 2,
     } as const;
+    const states = Object.keys(rank) as (keyof typeof rank)[];
     const scores = [-2, -1, 0, 1, 2] as const;
-    for (const current of Object.keys(rank) as (keyof typeof rank)[])
-      for (const m of scores)
-        for (const c of scores)
-          for (const ms of scores)
-            for (const a of scores) {
-              const result = evaluateV3Decision({
-                ...input(m, c, ms, a),
-                memory: {
+    for (const current of states)
+      for (const pendingState of [null, ...states])
+        for (const consecutiveObservations of [0, 1])
+          for (const m of scores)
+            for (const c of scores)
+              for (const a of scores) {
+                const memory = {
                   currentState: current,
-                  pendingState: null,
-                  consecutiveObservations: 0,
-                },
-              });
-              expect(rank[result.state!]).toBeLessThanOrEqual(ceiling[ms]!);
-            }
+                  pendingState,
+                  consecutiveObservations,
+                };
+                const healthy = evaluateV3Decision({
+                  ...input(m, c, 0, a),
+                  memory,
+                });
+                for (const ms of scores) {
+                  const result = evaluateV3Decision({
+                    ...input(m, c, ms, a),
+                    memory,
+                  });
+                  expect(rank[result.state!]).toBeLessThanOrEqual(ceiling[ms]!);
+                  // Without stale pending state, stress never makes the
+                  // outcome less defensive than a healthy market.
+                  if (pendingState === null)
+                    expect(rank[result.state!]).toBeLessThanOrEqual(
+                      rank[healthy.state!],
+                    );
+                }
+              }
   });
+});
+describe("decision memory versions", () => {
+  it("continues from the active version", () =>
+    expect(V3_DECISION_MEMORY_VERSIONS).toContain(V3_DECISION_CONFIG.version));
 });

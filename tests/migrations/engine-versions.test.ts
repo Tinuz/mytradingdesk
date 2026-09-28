@@ -18,12 +18,21 @@ describe("engine version registry", () => {
     ["decision", V3_DECISION_CONFIG.version],
     ["alert", ALERT_ENGINE_VERSION],
   ])("registers the active %s engine version", (_name, version) => {
-    expect(migrations).toMatch(
-      new RegExp(`insert into public\\.engine_versions[\\s\\S]*?'${version}'`),
-    );
+    // The version must open a values tuple of an engine_versions insert.
+    const inserts = migrations
+      .split(/insert into public\.engine_versions/i)
+      .slice(1)
+      .map((statement) => statement.split(/on conflict/i)[0]!);
+    expect(
+      inserts.some((values) => new RegExp(`\\(\\s*'${version}'`).test(values)),
+    ).toBe(true);
   });
 
   it("moves the alert watermark to the active alert engine", () => {
-    expect(migrations).toContain(`engine_version = '${ALERT_ENGINE_VERSION}'`);
+    expect(migrations).toMatch(
+      new RegExp(
+        `update public\\.alert_engine_state[^;]*engine_version = '${ALERT_ENGINE_VERSION}'`,
+      ),
+    );
   });
 });
