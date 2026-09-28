@@ -2,7 +2,7 @@
 
 ## V3 migration status
 
-Regime Engine `0.5.2-hypothesis.1`, Decision Engine `0.6.3-hypothesis.1` and Alert Engine `0.7.1-hypothesis.1` are active (see the [changelog](#engine-changelog)). Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
+Regime Engine `0.5.2-hypothesis.1`, Decision Engine `0.6.3-hypothesis.1` and Alert Engine `0.7.1-hypothesis.1` are active (see the [changelog](#engine-changelog)). Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
 
 ### V3 regime semantics
 
@@ -49,9 +49,9 @@ The output is anchored to each `JPNASSETS` observation. For every component the 
 
 Known limitations: China/PBoC is excluded and central-bank assets are not equivalent to broad money. Consequently the factor is classified as a `LEADING` `HYPOTHESIS`. The contract uses a monthly expected frequency, a 62-day freshness boundary, a USD 1–100 trillion plausible range and a 15% maximum month-to-month change.
 
-## Legacy v2 model
+## Retired v2 engine
 
-Phase 4 decisions are active under configuration `0.4.0-hypothesis.1`; the underlying regime configuration remains `0.3.0-hypothesis.1`. All thresholds, transition rules and classifications remain `HYPOTHESIS`. There is no alerting or allocation advice.
+The v2 engine (regime configuration `0.3.0-hypothesis.1`, decision configuration `0.4.0-hypothesis.1`) was removed from the code on 2026-09-28. Its stored snapshots stay readable, and its code remains in git history before that date. The v3 engine does not implement the v2 shock overrides.
 
 ## Fixed vocabulary
 
@@ -62,21 +62,9 @@ Phase 4 decisions are active under configuration `0.4.0-hypothesis.1`; the under
 - Confidence: `LOW`, `MEDIUM`, `HIGH`
 - Decisions: `STRONG_ACCUMULATION`, `ACCUMULATION`, `NEUTRAL`, `RISK_REDUCTION`, `DEFENSIVE`
 
-## Decision matrix
-
-The complete 125-combination matrix is generated and exported from versioned configuration. These initial rules reproduce the specification examples:
-
-- `STRONG_ACCUMULATION`: macro and crypto are both `+2`, asset is at least `+1`.
-- `DEFENSIVE`: macro is `-2`, crypto and asset are both at most `-1`.
-- `ACCUMULATION`: combined score is at least `+2`, with neither macro nor crypto negative.
-- `RISK_REDUCTION`: combined score is at most `-2`, with neither macro nor crypto positive.
-- All contradictory or unmatched combinations are `NEUTRAL`.
-
 ## Hysteresis and persistence
 
 Transitions use different entry and exit evidence. Accumulation requires a combined score of at least `+2`; it is retained through a weak-neutral boundary and exits at `0` or below. Strong accumulation enters at `+5` and exits at `+3` or below. The negative boundaries mirror this at `-2/-5` and `0/-3`. A permitted transition requires two consecutive equal candidates. Initial state establishment is immediate.
-
-Four explicit deterministic shock codes may bypass persistence and immediately produce `DEFENSIVE`: systemic stablecoin failure, major exchange insolvency, government prohibition and emergency central-bank action. Free text and LLM output cannot trigger this override.
 
 ## Confidence and explanations
 

@@ -11,7 +11,7 @@ loadEnvConfig(
 );
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["@cmip/domain", "@cmip/database"],
+  transpilePackages: ["@cmip/domain"],
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,

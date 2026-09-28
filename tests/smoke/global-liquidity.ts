@@ -1,5 +1,5 @@
 import { loadEnvConfig } from "@next/env";
-import { FredGlobalLiquidityProvider } from "../../packages/providers/src/adapters";
+import { FredGlobalLiquidityProvider } from "@cmip/providers";
 
 loadEnvConfig(process.cwd());
 if (!process.env.FRED_API_KEY) throw new Error("FRED_API_KEY is missing");

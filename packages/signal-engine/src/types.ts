@@ -2,35 +2,14 @@ import type {
   AssetRegime,
   ConfidenceLevel,
   CryptoCreditLiquidityRegime,
-  CryptoLiquidityRegime,
   FactorClassification,
   FactorFamily as V3FactorFamily,
   InvestmentRegime,
   MacroLiquidityRegime,
-  MacroRegime,
   MarketStructureRegime,
   ObservationQuality,
   RegimeScore,
 } from "@cmip/domain";
-
-export const ENGINE_INDICATORS = [
-  "BTC_USD",
-  "ETH_USD",
-  "DXY",
-  "US10Y_REAL",
-  "STABLECOIN_SUPPLY_USD",
-  "BTC_ETF_NET_FLOW_USD",
-  "ETH_ETF_NET_FLOW_USD",
-  "US_NET_LIQUIDITY_USD",
-] as const;
-export type EngineIndicator = (typeof ENGINE_INDICATORS)[number];
-export type FactorFamily =
-  | "MONETARY_CONDITIONS"
-  | "LIQUIDITY"
-  | "INSTITUTIONAL_FLOWS"
-  | "CRYPTO_NATIVE_LIQUIDITY"
-  | "ASSET_MARKET_STRUCTURE";
-export type FactorTiming = "LEADING" | "CONFIRMING" | "COINCIDENT";
 
 export const V3_ENGINE_INDICATORS = [
   "GLOBAL_LIQUIDITY_USD",
@@ -161,27 +140,7 @@ export interface V3DecisionOutput {
   engineVersion: "0.6.3-hypothesis.1";
 }
 
-export interface EngineObservation {
-  indicator: EngineIndicator;
-  observedAt: Date;
-  value: number;
-  quality: ObservationQuality;
-}
-export type ObservationSeries = Partial<
-  Record<EngineIndicator, readonly EngineObservation[]>
->;
-
-export interface FactorResult {
-  code: string;
-  family: FactorFamily;
-  timing: FactorTiming;
-  score: RegimeScore | null;
-  rawValue: number | null;
-  description: string;
-  status: "VALID" | "MISSING" | "STALE" | "INSUFFICIENT_HISTORY";
-}
-
-export interface RegimeResult<TState extends string, TFactor = FactorResult> {
+export interface RegimeResult<TState extends string, TFactor = V3FactorResult> {
   state: TState | null;
   score: RegimeScore | null;
   status: "AVAILABLE" | "INSUFFICIENT_DATA";
@@ -190,65 +149,7 @@ export interface RegimeResult<TState extends string, TFactor = FactorResult> {
   warnings: readonly string[];
 }
 
-export interface PhaseThreeInput {
-  asOf: Date;
-  observations: ObservationSeries;
-}
-export interface PhaseThreeOutput {
-  macro: RegimeResult<MacroRegime>;
-  cryptoLiquidity: RegimeResult<CryptoLiquidityRegime>;
-  assets: { BTC: RegimeResult<AssetRegime>; ETH: RegimeResult<AssetRegime> };
-  configurationVersion: string;
-}
-
-export type ShockType =
-  | "SYSTEMIC_STABLECOIN_FAILURE"
-  | "MAJOR_EXCHANGE_INSOLVENCY"
-  | "GOVERNMENT_PROHIBITION"
-  | "EMERGENCY_CENTRAL_BANK_ACTION";
-export interface TransitionMemory {
-  currentState: InvestmentRegime | null;
-  pendingState: InvestmentRegime | null;
-  consecutiveObservations: number;
-}
 export interface DataQualityIssue {
   code: string;
   severity: "WARNING" | "CRITICAL";
-}
-export interface ExplanationFact {
-  code: string;
-  regime: "MACRO" | "CRYPTO_LIQUIDITY" | "ASSET";
-  score: RegimeScore;
-  description: string;
-}
-export interface DecisionInput {
-  macro: RegimeResult<MacroRegime>;
-  cryptoLiquidity: RegimeResult<CryptoLiquidityRegime>;
-  asset: RegimeResult<AssetRegime>;
-  memory?: TransitionMemory;
-  shock?: ShockType;
-  dataQualityIssues?: readonly DataQualityIssue[];
-}
-export interface DecisionOutput {
-  state: InvestmentRegime | null;
-  candidateState: InvestmentRegime | null;
-  previousState: InvestmentRegime | null;
-  status: "AVAILABLE" | "INSUFFICIENT_DATA";
-  confidence: ConfidenceLevel;
-  transitioned: boolean;
-  transitionReason:
-    | "INITIAL"
-    | "PERSISTENCE_CONFIRMED"
-    | "PENDING_CONFIRMATION"
-    | "HYSTERESIS_HELD"
-    | "SHOCK_OVERRIDE"
-    | "INSUFFICIENT_DATA";
-  memory: TransitionMemory;
-  explanationFacts: {
-    positiveDrivers: readonly ExplanationFact[];
-    negativeDrivers: readonly ExplanationFact[];
-    contradictorySignals: readonly ExplanationFact[];
-    dataWarnings: readonly string[];
-  };
-  engineVersion: string;
 }

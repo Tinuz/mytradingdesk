@@ -5,7 +5,7 @@ import {
   FredProvider,
   SoSoValueEtfProvider,
   TwelveDataProvider,
-} from "../../packages/providers/src/adapters";
+} from "@cmip/providers";
 
 const provider = new CoinGeckoProvider(process.env.COINGECKO_API_KEY);
 const to = new Date();

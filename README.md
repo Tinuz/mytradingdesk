@@ -65,7 +65,7 @@ The six validation gates required for V1.0 are tracked in [V1-roadmap.md](V1-roa
 
 ## Phase 5 verification
 
-Run `npm run evaluate:persist` after ingestion to persist an idempotent regime/decision snapshot. Authenticated users can then inspect `/dashboard`, `/assets/btc`, `/assets/eth`, `/history`, and `/research`. The web application only reads stored intelligence output and contains no decision rules.
+Run `npm run shadow:cycle` to ingest, derive and persist regime and decision snapshots. Authenticated users can then inspect `/dashboard`, `/assets/btc`, `/assets/eth`, `/history`, and `/research`. The web application only reads stored intelligence output and contains no decision rules.
 
 ## Phase 7 dashboard
 

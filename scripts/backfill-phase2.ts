@@ -1,12 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseIngestionRepository } from "../packages/database/src/ingestion-repository";
+import { SupabaseIngestionRepository } from "@cmip/database";
 import {
   DefiLlamaStablecoinProvider,
   FredGlobalLiquidityProvider,
   FredLiquidityProvider,
   IngestionPipeline,
   SoSoValueEtfProvider,
-} from "../packages/providers/src";
+} from "@cmip/providers";
 
 const required = (name: string) => {
   const value = process.env[name];

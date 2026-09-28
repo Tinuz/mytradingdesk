@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseIngestionRepository } from "../packages/database/src/ingestion-repository";
+import { SupabaseIngestionRepository } from "@cmip/database";
 import {
   BGeometricsProvider,
   CoinalyzeOpenInterestProvider,

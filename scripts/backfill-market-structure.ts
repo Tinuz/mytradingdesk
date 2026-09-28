@@ -6,14 +6,14 @@ import {
   validateObservation,
   type PhaseOneIndicator,
   type ProviderObservation,
-} from "../packages/providers/src";
+} from "@cmip/providers";
 import {
   deriveOiDrawdown,
   deriveOiMarketCapRatio,
   MARKET_STRUCTURE_CALCULATION_VERSION,
   type CalculationPoint,
   type DerivedMetric,
-} from "../packages/signal-engine/src";
+} from "@cmip/signal-engine";
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is missing`);

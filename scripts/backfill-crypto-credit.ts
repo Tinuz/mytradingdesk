@@ -1,10 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-import { SupabaseIngestionRepository } from "../packages/database/src/ingestion-repository";
+import { SupabaseIngestionRepository } from "@cmip/database";
 import {
   DefiLlamaLoansProvider,
   IngestionPipeline,
   SoSoValueEtfProvider,
-} from "../packages/providers/src";
+} from "@cmip/providers";
 import {
   CRYPTO_CREDIT_CALCULATION_VERSION,
   deriveGrowth,
@@ -12,7 +12,7 @@ import {
   deriveStablecoinMetrics,
   type CalculationPoint,
   type DerivedMetric,
-} from "../packages/signal-engine/src";
+} from "@cmip/signal-engine";
 
 const required = (name: string) => {
   const value = process.env[name];

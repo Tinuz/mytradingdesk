@@ -20,17 +20,17 @@ Manual verification commands are `npm run smoke:providers`, `npm run ingest:live
 
 ## Phase 3 evaluation
 
-Use `npm run backfill:phase3` to obtain the 300-day BTC, ETH and real-yield history required for moving averages and 30-day factors. Use `npm run evaluate:regimes` for a read-only live evaluation. The evaluator paginates all canonical observations and prints the four independent regime results; it does not persist decisions or emit alerts.
+Use `npm run backfill:phase3` to obtain the 300-day BTC, ETH and real-yield history required for moving averages and 30-day factors. `npm run evaluate:v3-regimes` evaluates and stores the regime snapshots and `npm run evaluate:v3-decisions` the decision snapshots; the daily `npm run shadow:cycle` runs both. Neither emits alerts.
 
 ## Phase 4 engine operation
 
-Decision configuration `0.4.0-hypothesis.1` is immutable once snapshots reference it. Evaluation jobs must load the most recent decision snapshot as transition memory, evaluate the current regimes, then persist all three referenced regime snapshots and the decision snapshot in one transaction. Retry safety is enforced by asset, calculation timestamp and engine version. Historical replay must use separate memory per asset and must never invoke notifications.
+A decision engine version is immutable once snapshots reference it. Evaluation jobs must load the most recent decision snapshot as transition memory, evaluate the current regimes, then persist all three referenced regime snapshots and the decision snapshot in one transaction. Retry safety is enforced by asset, calculation timestamp and engine version. Historical replay must use separate memory per asset and must never invoke notifications.
 
-For rollback, deactivate the current engine version and activate a previously reviewed version through a new forward migration. Do not rewrite historical snapshots or edit an applied migration. Shock overrides accept only the four configured codes and require an independently verified operational input; never derive them from unstructured text.
+For rollback, deactivate the current engine version and activate a previously reviewed version through a new forward migration. Do not rewrite historical snapshots or edit an applied migration.
 
 ## Phase 5 snapshot and dashboard operation
 
-After successful ingestion, run `npm run evaluate:persist`. The command selects a deterministic calculation timestamp from the newest canonical observation, blocks persistence if a required regime is unavailable, stores referenced regime snapshots, restores per-asset transition memory and writes idempotent decision snapshots. It never emits alerts.
+After successful ingestion and derivation, run `npm run evaluate:v3-regimes` followed by `npm run evaluate:v3-decisions` (or the complete `npm run shadow:cycle`). Decisions restore per-asset transition memory from the latest compatible snapshot and never emit alerts.
 
 The authenticated routes `/dashboard`, `/assets/btc`, `/assets/eth`, `/history` and `/research` read only stored snapshots and protected health views. If they show no current evaluation, verify the snapshot job rather than adding UI fallback values. If data health shows stale or missing observations, follow the provider-outage/backfill procedure before re-evaluating.
 

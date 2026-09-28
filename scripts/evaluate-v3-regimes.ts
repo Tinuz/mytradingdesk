@@ -7,7 +7,7 @@ import {
   type V3EngineObservation,
   type V3FactorResult,
   type V3ObservationSeries,
-} from "../packages/signal-engine/src";
+} from "@cmip/signal-engine";
 import type { ConfidenceLevel } from "@cmip/domain";
 const required = (name: string) => {
   const value = process.env[name];

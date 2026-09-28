@@ -7,7 +7,7 @@ import {
   type RegimeResult,
   type V3FactorResult,
   type V3TransitionMemory,
-} from "../packages/signal-engine/src";
+} from "@cmip/signal-engine";
 import type {
   AssetRegime,
   CryptoCreditLiquidityRegime,
