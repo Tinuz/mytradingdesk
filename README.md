@@ -58,8 +58,8 @@ Requirements: Node.js 22, npm 11, and Docker with the Supabase CLI for a local d
 
 ```bash
 npm ci
-cp .env.example .env.local   # fill in the values you need
-npx supabase start           # local Postgres, Auth and REST API
+npx supabase start           # prints the local API URL, anon and service-role keys
+cp .env.example .env.local   # fill in those keys and any provider keys you need
 npm run dev
 ```
 
@@ -73,14 +73,15 @@ npm run typecheck   # workspaces plus scripts and tests
 npm run lint
 npm test            # unit and migration tests
 npm run build
-npm run test:e2e    # Playwright; needs a Supabase URL and anon key
+npx playwright install chromium
+npm run test:e2e    # runs the production build; needs a Supabase URL and anon key
 ```
 
 `npm run check` runs everything except the e2e tests.
 
 ## Operations
 
-A scheduled GitHub Actions workflow ([`.github/workflows/shadow-cycle.yml`](.github/workflows/shadow-cycle.yml)) runs the daily cycle. It starts with `npm run shadow:cycle`, which covers ingestion, derivation, regimes, decisions, alerts, trust capture and gate assessment. After that it runs the portfolio, allocation, paper, performance and outcome jobs. Every job is idempotent and safe to re-run.
+A scheduled GitHub Actions workflow ([`.github/workflows/shadow-cycle.yml`](.github/workflows/shadow-cycle.yml)) runs the daily cycle. It first runs `npm run shadow:cycle` for data, regimes, decisions, alerts and trust evidence, then the portfolio, allocation, paper, performance and outcome jobs. All steps share one calculation time and are idempotent per calculation time; see [operations.md](operations.md#daily-cycle).
 
 See [operations.md](operations.md) for runbooks: provider outages, backfills, quarantined data, source governance, alerts, validation and rollback.
 

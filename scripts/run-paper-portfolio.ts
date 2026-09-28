@@ -210,8 +210,17 @@ for (const user of await listAllUsers(db)) {
       .eq("paper_portfolio_id", paper.id)
       .eq("recommendation_id", approved.id);
     if (recordedError) throw recordedError;
+    // Trades recorded after the previous valuation are not in its book yet:
+    // a rerun after an interrupted run re-applies them instead of dropping
+    // them from the NAV.
+    const valuedUntil = previous
+      ? new Date(previous.calculated_at).getTime()
+      : -Infinity;
     const recordedNow = (recorded ?? [])
-      .filter((x) => new Date(x.executed_at).getTime() === at.getTime())
+      .filter((x) => {
+        const executedAt = new Date(x.executed_at).getTime();
+        return executedAt > valuedUntil && executedAt <= at.getTime();
+      })
       .map((x) => ({
         asset: x.asset as (typeof PAPER_ASSETS)[number],
         side: x.side as PlannedTrade["side"],

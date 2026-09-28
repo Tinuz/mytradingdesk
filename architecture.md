@@ -2,18 +2,20 @@
 
 ## Domain boundaries
 
-The system has four explicit domains:
+The system has five explicit domains:
 
-1. **Ingestion** communicates with providers, validates, reconciles, and persists observations.
-2. **Intelligence** calculates indicators, independent regimes, deterministic decisions, and explanation facts.
-3. **Notification** detects meaningful changes, deduplicates, persists, and delivers alerts.
-4. **Experience** renders authenticated dashboard, history, research, and settings views.
+1. **Ingestion** communicates with providers, validates, reconciles and persists observations.
+2. **Intelligence** calculates indicators, independent regimes, deterministic decisions and explanation facts.
+3. **Allocation and paper portfolio** turns decisions into mandate-bound target ranges, records human decisions and runs the paper portfolio, benchmarks and outcomes.
+4. **Notification** detects meaningful changes, deduplicates, persists and delivers alerts.
+5. **Experience** renders the authenticated app: the daily Vandaag → Beslissen → Resultaat flow plus the advanced research, validation, portfolio and governance views.
 
 Dependencies point inward. `apps/web` may consume structured output, but signal logic may never live in React or Next.js. `packages/signal-engine` may depend only on domain types/configuration and has no runtime dependency on Next.js, React, Supabase, or providers.
 
 ```text
 providers -> raw observations -> canonical observations -> indicator snapshots
   -> regime snapshots -> signal engine -> decision snapshots -> notifications
+  -> allocation recommendations -> human decision -> paper portfolio -> outcomes
                                                        -> web experience
 ```
 
@@ -35,7 +37,7 @@ Raw history is append-only by application policy. Corrections create new rows. H
 
 ## Supabase responsibilities
 
-Supabase provides PostgreSQL, Auth, RLS and later simple scheduled invocation. Service-role credentials remain server-side. Provider calls and protected operational access occur through trusted server boundaries. Portable packages keep long-running ingestion movable to a worker service.
+Supabase provides PostgreSQL, Auth and RLS. Scheduling is done by the GitHub Actions workflow `.github/workflows/shadow-cycle.yml`, which runs the operational scripts once a day. Service-role credentials remain server-side. Provider calls and protected operational access occur through trusted server boundaries. Portable packages keep long-running ingestion movable to a worker service.
 
 ## Failure handling
 
@@ -47,7 +49,7 @@ Jobs must be idempotent and independently retryable. Provider failure, staleness
 
 Raw and canonical rows have database-level update/delete guards. Provider corrections append a revision with vintage timing. Canonical insertion keys off the immutable source observation, while provider observations use provider, indicator, timestamp and provider reference for idempotency.
 
-Composite series (such as US net liquidity and the G3 central-bank-assets proxy) derive only a transparent, unit-normalized observation from same-date source components. They perform no regime classification, and the raw payload keeps every component, series identifier and formula for replay and audit.
+Composite series derive only a transparent, unit-normalized observation from aligned source components: same-date components for US net liquidity, and for the G3 central-bank-assets proxy the latest value of each component at or before the `JPNASSETS` anchor. They perform no regime classification, and the raw payload keeps every component, series identifier and formula for replay and audit.
 
 Dollar strength follows the same provenance rule without pretending proxy equivalence. `DXY_PROXY_ECB` stores the six ECB reference-rate components, public basket formula, fixing limitation and methodology version in every raw payload. Its 90-day change is active as the capped `DOLLAR_STRENGTH_ECB_90D` hypothesis factor. `US_BROAD_DOLLAR_INDEX` stores FRED `DTWEXBGS` separately and is validation-only; divergence lowers confidence without adding a duplicate score. Official `DXY` remains empty.
 

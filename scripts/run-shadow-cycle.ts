@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 const required = (name: string) => {
   const value = process.env[name];
@@ -19,11 +20,25 @@ const { data: existing } = await client
   .select("id,status,calculation_at,stages")
   .eq("cycle_key", cycleKey)
   .maybeSingle();
+/**
+ * The later workflow steps (allocation, paper portfolio, outcomes, ...) must
+ * use the same calculation time as the cycle; otherwise a re-run of the
+ * workflow writes a second recommendation and valuation at a new time.
+ */
+function shareCalculationTime(at: Date) {
+  if (process.env.GITHUB_ENV)
+    appendFileSync(
+      process.env.GITHUB_ENV,
+      `CYCLE_CALCULATION_AT=${at.toISOString()}\n`,
+    );
+}
 if (existing?.status === "SUCCEEDED") {
+  shareCalculationTime(new Date(existing.calculation_at));
   console.log(JSON.stringify({ cycleKey, status: "ALREADY_SUCCEEDED" }));
   process.exit(0);
 }
 const calculationAt = existing ? new Date(existing.calculation_at) : now;
+shareCalculationTime(calculationAt);
 const previousStages = (
   Array.isArray(existing?.stages) ? existing.stages : []
 ) as Array<Record<string, unknown>>;
