@@ -2,7 +2,7 @@
 
 ## V3 migration status
 
-Regime Engine `0.5.1-hypothesis.1`, Decision Engine `0.6.2-hypothesis.1` and Alert Engine `0.7.0-hypothesis.1` are active. Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
+Regime Engine `0.5.2-hypothesis.1`, Decision Engine `0.6.3-hypothesis.1` and Alert Engine `0.7.1-hypothesis.1` are active (see the [changelog](#engine-changelog)). Alerts evaluate only new live snapshots after their activation watermark; historical replay cannot emit notifications. The v2 engine remains available for deterministic replay only. New v3 classifications are `LEADING`, `CONFIRMING`, `RISK` and `CONTEXT`, each with status `HYPOTHESIS` or `VALIDATED`.
 
 ### V3 regime semantics
 
@@ -16,14 +16,14 @@ Current thresholds are explicit hypotheses. Independent factor families are aggr
 
 ### V3 Decision Engine
 
-Decision engine `0.6.2-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance. Both the pre-governance opportunity state and the independent stress state are persisted. They must never be recombined in the experience layer:
+Decision engine `0.6.3-hypothesis.1` evaluates all `5 × 5 × 5 × 5 = 625` combinations of Macro Liquidity, Crypto Credit, Market Structure and Asset Regime. Opportunity is calculated from macro, crypto credit and the asset; Market Structure is applied separately as risk/stress governance. Both the pre-governance opportunity state and the independent stress state are persisted. They must never be recombined in the experience layer:
 
 - `ELEVATED_RISK` and `OVERHEATED` cap `STRONG_ACCUMULATION` at `ACCUMULATION`.
 - `STRESSED` caps otherwise positive accumulation states at `NEUTRAL`.
 - `CAPITULATION` also caps positive accumulation at `NEUTRAL`; capitulation is never treated as a direct buy signal.
 - Negative opportunity outcomes are not improved by a Market Structure override.
 
-Transitions use two confirming observations after hysteresis permits the candidate. Initial state establishment is immediate. Confidence describes completeness, freshness, warnings and independent regime coverage; it is not a probability of future return. Every persisted decision retains all four source snapshots, the override, transition memory, engine version and structured explanation facts.
+Transitions use two confirming observations after hysteresis permits the candidate. Initial state establishment is immediate. The caps above also bound the current state: when Market Structure lowers the ceiling below a state held by hysteresis or pending confirmation, the state drops to the ceiling immediately (`STRESS_CAP_APPLIED`). Risk governance never waits for persistence. Confidence describes completeness, freshness, warnings and independent regime coverage; it is not a probability of future return. Every persisted decision retains all four source snapshots, the override, transition memory, engine version and structured explanation facts.
 
 ### G3 central-bank assets liquidity proxy
 
@@ -125,3 +125,17 @@ These thresholds have not been statistically calibrated. Promotion from `HYPOTHE
 The experience therefore exposes `MODEL VALIDATION = UNVALIDATED` separately from input confidence. A fresh, complete and internally consistent snapshot can have high data confidence while the model itself remains unvalidated. Daily shadow evidence is stored in `trust_observations`; it cannot by itself promote the model without the historical validation gate above.
 
 Historical evidence has two non-interchangeable modes. `RECONSTRUCTED` uses present stored history and is descriptive only. `POINT_IN_TIME` requires `observed_at <= evaluation_at` and proven `available_at <= evaluation_at`, where availability is raw receipt time or derived calculation time. Observation dates and provider backfills are never sufficient availability proof.
+
+## Engine changelog
+
+Each entry records the change, reason, expected effect, tests and version, as required by `instructions.md`. Versions are registered in `engine_versions` by the migration named in the entry.
+
+### 2026-09-28 — Regime `0.5.2`, Decision `0.6.3`, Alert `0.7.1` (migration `202609280037`)
+
+| Engine                        | Change                                                                   | Reason                                                                                                                                                             | Expected effect                                                                                                                 | Tests                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Regime `0.5.2-hypothesis.1`   | `{ASSET}_DRAWDOWN` measures the one-year high over 365 daily closes.     | The high was taken over the last 365 observations. Live ingestion stores several intraday points per day, so the window shrank to weeks and understated drawdowns. | Drawdown scores match their "one-year high" definition. After a long decline, asset regimes can score lower than under `0.5.1`. | `v3-regimes.test.ts`: drawdown with dense intraday data                              |
+| Decision `0.6.3-hypothesis.1` | Market Structure caps also apply to a held state (`STRESS_CAP_APPLIED`). | Caps applied only to new candidates. Hysteresis could keep `STRONG_ACCUMULATION` during `CAPITULATION`, which contradicts the documented governance.               | Stress lowers positive states immediately. Opportunity transitions still need hysteresis plus two observations.                 | `v3-decisions.test.ts`: held-state caps plus an exhaustive 5 × 625 ceiling invariant |
+| Alert `0.7.1-hypothesis.1`    | Only a newly activated risk override is material.                        | A persisting override raised a `CRITICAL` alert on every evaluation, which conflicts with the low-false-alert goal.                                                | Fewer repeated critical alerts. Real transitions still alert.                                                                   | `notifications/index.test.ts`: persisting override                                   |
+
+The alert watermark (`alert_engine_state.live_since`) moves to the activation time, so snapshots classified by `0.7.0` are not re-evaluated.

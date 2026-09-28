@@ -86,7 +86,7 @@ export interface V3RegimeOutput {
     BTC: RegimeResult<AssetRegime, V3FactorResult>;
     ETH: RegimeResult<AssetRegime, V3FactorResult>;
   };
-  configurationVersion: "0.5.1-hypothesis.1";
+  configurationVersion: "0.5.2-hypothesis.1";
 }
 
 export interface V3EngineObservation {
@@ -147,6 +147,7 @@ export interface V3DecisionOutput {
     | "PERSISTENCE_CONFIRMED"
     | "PENDING_CONFIRMATION"
     | "HYSTERESIS_HELD"
+    | "STRESS_CAP_APPLIED"
     | "INSUFFICIENT_DATA";
   memory: V3TransitionMemory;
   riskOverride: "NONE" | "OVERHEAT_CAP" | "STRESS_CAP" | "CAPITULATION_CAP";
@@ -157,7 +158,7 @@ export interface V3DecisionOutput {
     contradictorySignals: readonly V3ExplanationFact[];
     dataWarnings: readonly string[];
   };
-  engineVersion: "0.6.2-hypothesis.1";
+  engineVersion: "0.6.3-hypothesis.1";
 }
 
 export interface EngineObservation {

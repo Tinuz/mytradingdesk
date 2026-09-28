@@ -7,7 +7,7 @@ import type {
   V3FactorResult,
 } from "./types";
 export const V3_DECISION_CONFIG = {
-  version: "0.6.2-hypothesis.1",
+  version: "0.6.3-hypothesis.1",
   persistenceObservations: 2,
   hysteresis: {
     STRONG_ACCUMULATION: { enter: 5, exit: 3 },
@@ -59,6 +59,22 @@ export function configuredV3Decision(
   )
     return { state: "NEUTRAL", riskOverride: "CAPITULATION_CAP" };
   return { state: base, riskOverride: "NONE" };
+}
+/**
+ * Highest decision state Market Structure permits. The matrix applies the same
+ * caps to candidates; this ceiling also governs a state that hysteresis or
+ * pending confirmation would otherwise hold above it.
+ */
+function stressCeiling(market: RegimeScore): {
+  state: InvestmentRegime;
+  riskOverride: V3DecisionOutput["riskOverride"];
+} | null {
+  if (market >= 1)
+    return { state: "ACCUMULATION", riskOverride: "OVERHEAT_CAP" };
+  if (market === -1) return { state: "NEUTRAL", riskOverride: "STRESS_CAP" };
+  if (market === -2)
+    return { state: "NEUTRAL", riskOverride: "CAPITULATION_CAP" };
+  return null;
 }
 export const V3_DECISION_MATRIX = Object.freeze(
   Object.fromEntries(
@@ -227,6 +243,24 @@ export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
       riskOverride: configured.riskOverride,
       memory: {
         currentState: candidate,
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    };
+  // Risk governance is immediate: stress never waits for hysteresis or a
+  // second confirming observation to lower a held state.
+  const ceiling = stressCeiling(market);
+  if (ceiling && rank[previous] > rank[ceiling.state])
+    return {
+      ...base,
+      state: ceiling.state,
+      candidateState: candidate,
+      status: "AVAILABLE",
+      transitioned: true,
+      transitionReason: "STRESS_CAP_APPLIED",
+      riskOverride: ceiling.riskOverride,
+      memory: {
+        currentState: ceiling.state,
         pendingState: null,
         consecutiveObservations: 0,
       },

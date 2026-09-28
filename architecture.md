@@ -61,7 +61,7 @@ Every evaluation is a pure function of observations, evaluation timestamp and co
 
 The same framework-independent package maps the three separately visible regime scores through a complete versioned decision matrix. Transition memory is explicit input/output, so hysteresis and two-observation persistence are deterministic and replayable rather than hidden process state. Confidence and explanation facts are structured engine output. Database persistence remains an adapter responsibility; idempotency indexes protect regime and decision snapshots from job retries. Alerts remain outside the engine and inactive until Phase 6.
 
-Decision Engine `0.6.2-hypothesis.1` persists opportunity and stress as separate axes. Opportunity uses Macro Liquidity, Crypto Credit and the Asset regime; Market Structure supplies independent stress governance and is never added to the opportunity score. The experience layer consumes these stored outputs and may not reconstruct either classification.
+Decision Engine `0.6.3-hypothesis.1` persists opportunity and stress as separate axes. Opportunity uses Macro Liquidity, Crypto Credit and the Asset regime; Market Structure supplies independent stress governance and is never added to the opportunity score. The experience layer consumes these stored outputs and may not reconstruct either classification.
 
 ## Capital allocation foundation
 

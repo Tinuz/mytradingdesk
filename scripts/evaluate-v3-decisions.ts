@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
+  V3_DECISION_CONFIG,
+  V3_REGIME_CONFIG,
   evaluateV3Decision,
   type RegimeResult,
   type V3FactorResult,
@@ -42,7 +44,7 @@ async function latest(type: string, assetId?: string) {
       "id,asset_id,regime_score,regime_state,confidence_level,factor_breakdown",
     )
     .eq("regime_type", type)
-    .eq("engine_version", "0.5.1-hypothesis.1")
+    .eq("engine_version", V3_REGIME_CONFIG.version)
     .order("calculated_at", { ascending: false })
     .limit(1);
   query = assetId ? query.eq("asset_id", assetId) : query.is("asset_id", null);
@@ -78,7 +80,12 @@ for (const asset of assets ?? []) {
     .from("decision_snapshots")
     .select("decision_state,pending_state,consecutive_observations")
     .eq("asset_id", asset.id)
-    .in("engine_version", ["0.6.2-hypothesis.1", "0.6.1-hypothesis.1"])
+    // Transition memory carries across v3 decision engine versions.
+    .in("engine_version", [
+      V3_DECISION_CONFIG.version,
+      "0.6.2-hypothesis.1",
+      "0.6.1-hypothesis.1",
+    ])
     .order("calculated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -133,7 +140,7 @@ for (const asset of assets ?? []) {
 }
 console.log(
   JSON.stringify(
-    { engineVersion: "0.6.2-hypothesis.1", decisions: results },
+    { engineVersion: V3_DECISION_CONFIG.version, decisions: results },
     null,
     2,
   ),

@@ -7,6 +7,7 @@ import {
   type AlertType,
   type RecentAlert,
 } from "@cmip/notifications";
+import { listAllUsers } from "./lib/runtime";
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is missing`);
@@ -53,51 +54,57 @@ const { data: assets, error: assetError } = await client
   .select("id,symbol")
   .in("symbol", ["BTC", "ETH"]);
 if (assetError) throw assetError;
+const decisionColumns =
+  "id,calculated_at,symbol,decision_state,macro_score,crypto_score,market_structure_state,asset_score,risk_override";
 for (const asset of assets ?? []) {
-  const { data: rows, error } = await client
-    .from("decision_experience")
-    .select(
-      "id,calculated_at,symbol,decision_state,macro_score,crypto_score,market_structure_state,asset_score,risk_override",
-    )
-    .eq("symbol", asset.symbol)
-    .gte("calculated_at", state.live_since)
-    .order("calculated_at", { ascending: true });
-  if (error) throw error;
-  for (const current of (rows as DecisionRow[]) ?? []) {
-    const { data: previous, error: previousError } = await client
+  const [live, before] = await Promise.all([
+    client
       .from("decision_experience")
-      .select(
-        "id,calculated_at,symbol,decision_state,macro_score,crypto_score,market_structure_state,asset_score,risk_override",
-      )
+      .select(decisionColumns)
       .eq("symbol", asset.symbol)
-      .lt("calculated_at", current.calculated_at)
+      .gte("calculated_at", state.live_since)
+      .order("calculated_at", { ascending: true }),
+    // The snapshot just before the watermark is the baseline for the first
+    // live snapshot; it never produces an alert itself.
+    client
+      .from("decision_experience")
+      .select(decisionColumns)
+      .eq("symbol", asset.symbol)
+      .lt("calculated_at", state.live_since)
       .order("calculated_at", { ascending: false })
       .limit(1)
-      .maybeSingle();
-    if (previousError) throw previousError;
-    if (!previous) continue;
-    const candidate = decisionAlert(
-      {
-        eventId: current.id,
-        decisionSnapshotId: current.id,
-        assetId: asset.id,
-        assetSymbol: asset.symbol,
-        occurredAt: current.calculated_at,
-        previousDecision: previous.decision_state,
-        decision: current.decision_state,
-        previousMacroScore: previous.macro_score,
-        macroScore: current.macro_score,
-        previousCryptoScore: previous.crypto_score,
-        cryptoScore: current.crypto_score,
-        previousMarketStructure: previous.market_structure_state,
-        marketStructure: current.market_structure_state,
-        previousAssetScore: previous.asset_score,
-        assetScore: current.asset_score,
-        riskOverride: current.risk_override,
-      },
-      "LIVE",
-    );
-    if (candidate) candidates.push(candidate);
+      .maybeSingle(),
+  ]);
+  if (live.error) throw live.error;
+  if (before.error) throw before.error;
+  let previous = before.data as DecisionRow | null;
+  for (const current of (live.data as DecisionRow[]) ?? []) {
+    if (previous) {
+      const candidate = decisionAlert(
+        {
+          eventId: current.id,
+          decisionSnapshotId: current.id,
+          assetId: asset.id,
+          assetSymbol: asset.symbol,
+          occurredAt: current.calculated_at,
+          previousDecision: previous.decision_state,
+          decision: current.decision_state,
+          previousMacroScore: previous.macro_score,
+          macroScore: current.macro_score,
+          previousCryptoScore: previous.crypto_score,
+          cryptoScore: current.crypto_score,
+          previousMarketStructure: previous.market_structure_state,
+          marketStructure: current.market_structure_state,
+          previousAssetScore: previous.asset_score,
+          assetScore: current.asset_score,
+          previousRiskOverride: previous.risk_override,
+          riskOverride: current.risk_override,
+        },
+        "LIVE",
+      );
+      if (candidate) candidates.push(candidate);
+    }
+    previous = current;
   }
 }
 const { data: quality, error: qualityError } = await client
@@ -123,11 +130,7 @@ for (const event of quality ?? []) {
   );
   if (candidate) candidates.push(candidate);
 }
-const { data: userPage, error: userError } = await client.auth.admin.listUsers({
-  page: 1,
-  perPage: 1000,
-});
-if (userError) throw userError;
+const users = await listAllUsers(client);
 let alertsCreated = 0,
   emailDelivered = 0,
   suppressed = 0;
@@ -163,7 +166,7 @@ async function sendEmail(to: string, alert: AlertCandidate) {
     throw new Error(`Resend delivery failed (${response.status})`);
   return body.id;
 }
-for (const user of userPage.users) {
+for (const user of users) {
   const { data: preference, error: preferenceError } = await client
     .from("notification_preferences")
     .select("in_app_enabled,email_enabled,cooldown_hours")

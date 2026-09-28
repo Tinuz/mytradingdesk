@@ -131,6 +131,35 @@ describe("v3 named regime fixtures", () => {
       expect(first.assets.ETH.status).toBe("AVAILABLE");
     },
   );
+  it("measures drawdown from the one-year high in days, not observations", () => {
+    const observations = fixture({}) as Partial<
+      Record<V3EngineIndicator, V3EngineObservation[]>
+    >;
+    const day = 86_400_000;
+    const btc: V3EngineObservation[] = [];
+    // Peak of 100k 200 days ago, then 55k; the last 30 days carry 24
+    // intraday observations each, as live ingestion accumulates.
+    for (let d = 249; d >= 0; d--) {
+      const value = d === 200 ? 100_000 : 55_000;
+      const hours = d < 30 ? 24 : 1;
+      for (let h = 0; h < hours; h++)
+        btc.push({
+          indicator: "BTC_USD",
+          observedAt: new Date(asOf.getTime() - d * day - h * 3_600_000),
+          value,
+          quality: "VALID",
+        });
+    }
+    observations.BTC_USD = btc.sort(
+      (a, b) => a.observedAt.getTime() - b.observedAt.getTime(),
+    );
+    const drawdown = evaluateV3Regimes({
+      asOf,
+      observations,
+    }).assets.BTC.factors.find((x) => x.code === "BTC_DRAWDOWN");
+    expect(drawdown?.rawValue).toBeCloseTo(-45);
+    expect(drawdown?.score).toBe(-2);
+  });
   it("stale data fails closed", () => {
     const result = evaluateV3Regimes({
       asOf,

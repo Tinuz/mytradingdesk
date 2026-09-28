@@ -8,7 +8,7 @@ Required server secrets are `SUPABASE_SERVICE_ROLE_KEY`, `FRED_API_KEY`, and `TW
 
 Source approval is an immutable legal/operations action, never inferred from a successful HTTP request. After reviewing the exact terms, run `npm run governance:review-source` with `SOURCE_REVIEW_ACK=I_HAVE_REVIEWED_TERMS` plus `SOURCE_PROVIDER`, `SOURCE_APPROVAL`, `SOURCE_AUTOMATION_RIGHTS`, `SOURCE_HISTORICAL_STORAGE_RIGHTS`, `SOURCE_TERMS_URL`, `SOURCE_FRESHNESS_CONTRACT`, `SOURCE_FALLBACK_POLICY` and `SOURCE_REVIEW_NOTES`. Until then allocation remains fail-closed.
 
-Dollar strength is collected through two separate series. `DXY_PROXY_ECB` uses one batched ECB SDMX request for USD, JPY, GBP, CAD, SEK and CHF reference rates; its 90-day change is active as the capped `DOLLAR_STRENGTH_ECB_90D` hypothesis in Regime Engine `0.5.1-hypothesis.1`. `US_BROAD_DOLLAR_INDEX` uses FRED `DTWEXBGS` for validation only. Run `npm run backfill:dollar-strength` for a ten-year backfill and `npm run audit:dollar-strength` to inspect directional agreement. Official `DXY` remains unavailable.
+Dollar strength is collected through two separate series. `DXY_PROXY_ECB` uses one batched ECB SDMX request for USD, JPY, GBP, CAD, SEK and CHF reference rates; its 90-day change is active as the capped `DOLLAR_STRENGTH_ECB_90D` hypothesis in Regime Engine `0.5.1-hypothesis.1` (carried forward unchanged in `0.5.2`). `US_BROAD_DOLLAR_INDEX` uses FRED `DTWEXBGS` for validation only. Run `npm run backfill:dollar-strength` for a ten-year backfill and `npm run audit:dollar-strength` to inspect directional agreement. Official `DXY` remains unavailable.
 
 ## Phase 2 ingestion
 

@@ -21,6 +21,7 @@ const transition: DecisionAlertInput = {
   marketStructure: "STRESSED",
   previousAssetScore: 1,
   assetScore: 0,
+  previousRiskOverride: "NONE",
   riskOverride: "NONE",
 };
 describe("alert engine", () => {
@@ -114,5 +115,27 @@ describe("alert engine", () => {
       severity: "CRITICAL",
       direction: "DETERIORATING",
     });
+  });
+  it("does not re-alert while the same risk override persists", () => {
+    const persisting = {
+      ...transition,
+      previousDecision: "ACCUMULATION",
+      decision: "ACCUMULATION",
+      previousMacroScore: 1,
+      macroScore: 1,
+      previousCryptoScore: 1,
+      cryptoScore: 1,
+      previousMarketStructure: "OVERHEATED",
+      marketStructure: "OVERHEATED",
+      previousAssetScore: 1,
+      assetScore: 1,
+      previousRiskOverride: "OVERHEAT_CAP",
+      riskOverride: "OVERHEAT_CAP",
+    };
+    expect(decisionAlert(persisting, "LIVE")).toBeNull();
+    // Another material change while the override persists is not critical.
+    expect(
+      decisionAlert({ ...persisting, assetScore: 0 }, "LIVE"),
+    ).toMatchObject({ alertType: "REGIME_CHANGE", severity: "INFO" });
   });
 });

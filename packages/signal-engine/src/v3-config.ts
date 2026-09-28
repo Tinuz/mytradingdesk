@@ -1,5 +1,5 @@
 export const V3_REGIME_CONFIG = {
-  version: "0.5.1-hypothesis.1",
+  version: "0.5.2-hypothesis.1",
   assumptionStatus: "HYPOTHESIS",
   thresholds: {
     globalLiquidity90d: [1, 3],

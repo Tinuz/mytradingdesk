@@ -163,4 +163,81 @@ describe("v3 decision matrix", () => {
       stressState: null,
     });
   });
+  it("applies market stress immediately to a state held by hysteresis", () => {
+    // Opportunity total 6 stays above the strong-accumulation exit (3), so
+    // hysteresis alone would keep STRONG_ACCUMULATION despite capitulation.
+    const held = evaluateV3Decision({
+      ...input(2, 2, -2, 2),
+      memory: {
+        currentState: "STRONG_ACCUMULATION",
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    });
+    expect(held).toMatchObject({
+      state: "NEUTRAL",
+      previousState: "STRONG_ACCUMULATION",
+      transitioned: true,
+      transitionReason: "STRESS_CAP_APPLIED",
+      riskOverride: "CAPITULATION_CAP",
+      memory: { currentState: "NEUTRAL", pendingState: null },
+    });
+    const overheated = evaluateV3Decision({
+      ...input(2, 2, 2, 2),
+      memory: {
+        currentState: "STRONG_ACCUMULATION",
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    });
+    expect(overheated).toMatchObject({
+      state: "ACCUMULATION",
+      transitionReason: "STRESS_CAP_APPLIED",
+      riskOverride: "OVERHEAT_CAP",
+    });
+  });
+  it("never lets a stress cap raise a state that is already below it", () => {
+    const result = evaluateV3Decision({
+      ...input(-1, -1, -1, 0),
+      memory: {
+        currentState: "RISK_REDUCTION",
+        pendingState: null,
+        consecutiveObservations: 0,
+      },
+    });
+    expect(result.state).toBe("RISK_REDUCTION");
+    expect(result.transitionReason).not.toBe("STRESS_CAP_APPLIED");
+  });
+  it("holds every positive state at or below the stress ceiling", () => {
+    const ceiling: Record<number, number> = {
+      [-2]: 0,
+      [-1]: 0,
+      0: 2,
+      1: 1,
+      2: 1,
+    };
+    const rank = {
+      DEFENSIVE: -2,
+      RISK_REDUCTION: -1,
+      NEUTRAL: 0,
+      ACCUMULATION: 1,
+      STRONG_ACCUMULATION: 2,
+    } as const;
+    const scores = [-2, -1, 0, 1, 2] as const;
+    for (const current of Object.keys(rank) as (keyof typeof rank)[])
+      for (const m of scores)
+        for (const c of scores)
+          for (const ms of scores)
+            for (const a of scores) {
+              const result = evaluateV3Decision({
+                ...input(m, c, ms, a),
+                memory: {
+                  currentState: current,
+                  pendingState: null,
+                  consecutiveObservations: 0,
+                },
+              });
+              expect(rank[result.state!]).toBeLessThanOrEqual(ceiling[ms]!);
+            }
+  });
 });

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { ALERT_ENGINE_VERSION } from "@cmip/notifications";
 const required = (name: string) => {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is missing`);
@@ -17,7 +18,7 @@ const { data: run, error: runError } = await client
     run_mode: "SHADOW",
     status: "RUNNING",
     started_at: startedAt.toISOString(),
-    engine_version: "0.7.0-hypothesis.1",
+    engine_version: ALERT_ENGINE_VERSION,
   })
   .select("id")
   .single();
@@ -42,7 +43,11 @@ try {
       .select("id", { count: "exact", head: true })
       // previous_state is set on every non-initial snapshot; only these
       // reasons mean the decision state actually changed.
-      .in("transition_reason", ["PERSISTENCE_CONFIRMED", "SHOCK_OVERRIDE"]),
+      .in("transition_reason", [
+        "PERSISTENCE_CONFIRMED",
+        "SHOCK_OVERRIDE",
+        "STRESS_CAP_APPLIED",
+      ]),
     client.from("alerts").select("id", { count: "exact", head: true }),
     client
       .from("ingestion_runs")

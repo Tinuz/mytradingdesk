@@ -1,4 +1,4 @@
-export const ALERT_ENGINE_VERSION = "0.7.0-hypothesis.1" as const;
+export const ALERT_ENGINE_VERSION = "0.7.1-hypothesis.1" as const;
 export type AlertType =
   | "DECISION_CHANGE"
   | "REGIME_CHANGE"
@@ -23,6 +23,7 @@ export interface DecisionAlertInput {
   marketStructure: string;
   previousAssetScore: number;
   assetScore: number;
+  previousRiskOverride: string;
   riskOverride: string;
 }
 export interface DataQualityAlertInput {
@@ -94,7 +95,12 @@ export function decisionAlert(
   const decisionChanged = input.previousDecision !== input.decision;
   const riskBefore = marketRisk[input.previousMarketStructure] ?? 0;
   const riskAfter = marketRisk[input.marketStructure] ?? 0;
-  const riskChanged = riskBefore !== riskAfter || input.riskOverride !== "NONE";
+  // Only a newly activated override is material; a persisting one would
+  // otherwise raise a critical alert on every evaluation.
+  const overrideActivated =
+    input.riskOverride !== "NONE" &&
+    input.riskOverride !== input.previousRiskOverride;
+  const riskChanged = riskBefore !== riskAfter || overrideActivated;
   if (!decisionChanged && !riskChanged && changes.length === 0) return null;
   const alertType: AlertType = decisionChanged
     ? "DECISION_CHANGE"
@@ -110,7 +116,7 @@ export function decisionAlert(
       ? direction(riskAfter, riskBefore)
       : "CHANGED";
   const severity: AlertSeverity =
-    input.riskOverride !== "NONE" || riskAfter === 2
+    overrideActivated || (riskAfter === 2 && riskBefore !== 2)
       ? "CRITICAL"
       : alertDirection === "DETERIORATING"
         ? "WARNING"
@@ -128,7 +134,7 @@ export function decisionAlert(
     title,
     message: changes.length
       ? changes.join("; ")
-      : input.riskOverride !== "NONE"
+      : overrideActivated
         ? `Risk override: ${input.riskOverride}`
         : "Materiële modelwijziging.",
     occurredAt: input.occurredAt,
@@ -138,6 +144,7 @@ export function decisionAlert(
       engineVersion: ALERT_ENGINE_VERSION,
       previousDecision: input.previousDecision,
       decision: input.decision,
+      previousRiskOverride: input.previousRiskOverride,
       riskOverride: input.riskOverride,
       changes,
     },
