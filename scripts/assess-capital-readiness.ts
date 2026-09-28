@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { calculationTime } from "./lib/runtime";
 const req = (n: string) => {
     const v = process.env[n];
     if (!v) throw new Error(`${n} missing`);
@@ -9,7 +10,7 @@ const req = (n: string) => {
     req("SUPABASE_SERVICE_ROLE_KEY"),
     { auth: { persistSession: false } },
   ),
-  now = new Date(),
+  now = calculationTime(),
   protocol = "cas-shadow-protocol-v1";
 const [{ data: v1 }, { data: papers }, { count: critical }] = await Promise.all(
     [
@@ -40,6 +41,20 @@ const [{ data: v1 }, { data: papers }, { count: critical }] = await Promise.all(
     .filter(([, ok]) => !ok)
     .map(([x]) => x),
   status = blockers.length ? "BLOCKED" : "PASSED";
+// The table has no uniqueness constraint: skip if this calculation time was
+// already assessed, so a re-run of the workflow adds nothing.
+const { data: existing, error: existingError } = await c
+  .from("capital_readiness_assessments")
+  .select("id")
+  .eq("assessed_at", now.toISOString())
+  .eq("protocol_version", protocol)
+  .limit(1)
+  .maybeSingle();
+if (existingError) throw existingError;
+if (existing) {
+  console.log(JSON.stringify({ status: "ALREADY_ASSESSED" }));
+  process.exit(0);
+}
 const { error } = await c.from("capital_readiness_assessments").insert({
   assessed_at: now.toISOString(),
   protocol_version: protocol,

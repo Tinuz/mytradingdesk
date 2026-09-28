@@ -7,13 +7,13 @@ The scheduled workflow `.github/workflows/shadow-cycle.yml` runs once a day afte
 1. `npm run shadow:cycle`: ingestion, derivation, data-quality sync, regimes, decisions, alerts, trust capture, point-in-time audit and V1 gate assessment. The stages share one calculation time, and a failed cycle resumes at the failed stage when re-run on the same day.
 2. `portfolio:snapshot`, `portfolio:lots`, `valuations:calculate`, `intelligence:calculate`, `allocations:calculate`, `portfolio:risk`, `paper:run`, `performance:calculate`, `outcomes:calculate`, `validation:monthly-report`, `capital:assess`.
 
-`shadow:cycle` shares its calculation time with every later step (it exports `CYCLE_CALCULATION_AT`), and a re-run on the same day reuses the day's time. Jobs are idempotent per calculation time: re-running the workflow does not write a second recommendation or valuation. To re-run a single job by hand for an earlier cycle, set `CYCLE_CALCULATION_AT` to that cycle's calculation time. Resolve critical data or source incidents before reviewing allocation changes.
+`shadow:cycle` shares its calculation time with every later step (it exports `CYCLE_CALCULATION_AT`), and a re-run on the same day reuses the day's time. Jobs are idempotent per calculation time: re-running the workflow does not write a second recommendation or valuation. To re-run a single job by hand for an earlier cycle, set `CYCLE_CALCULATION_AT` to that cycle's `calculation_at` from `pipeline_cycles` (looked up by `cycle_key`, e.g. `shadow-2026-09-28`). Resolve critical data or source incidents before reviewing allocation changes.
 
 ## Ingestion
 
 Each ingestion invocation is independently executable, idempotent and records provider failures rather than manufacturing data.
 
-Required server secrets are `SUPABASE_SERVICE_ROLE_KEY`, `FRED_API_KEY`, `TWELVE_DATA_API_KEY`, `SOSOVALUE_API_KEY` (ETF flows) and `COINALYZE_API_KEY` (perpetual open interest). `COINGECKO_API_KEY` is optional where the selected plan permits unauthenticated calls, and `RESEND_API_KEY` with `ALERT_EMAIL_FROM` is optional for email. The workflow's `env` block and `.env.example` list the same variables. The ECB dollar-proxy feed is keyless. Never expose provider secrets through `NEXT_PUBLIC_` variables.
+Every script needs `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Ingestion requires `FRED_API_KEY`, `TWELVE_DATA_API_KEY` and `COINALYZE_API_KEY` (perpetual open interest); `SOSOVALUE_API_KEY` enables ETF flows (skipped without it in `ingest:live`, required by `backfill:crypto-credit`). `COINGECKO_API_KEY` is optional where the selected plan permits unauthenticated calls, and `RESEND_API_KEY` with `ALERT_EMAIL_FROM` is optional for email. The workflow's `env` block and `.env.example` list the same variables. The ECB dollar-proxy feed is keyless. Never expose provider secrets through `NEXT_PUBLIC_` variables.
 
 Source approval is an immutable legal/operations action, never inferred from a successful HTTP request. After reviewing the exact terms, run `npm run governance:review-source` with `SOURCE_REVIEW_ACK=I_HAVE_REVIEWED_TERMS` plus `SOURCE_PROVIDER`, `SOURCE_APPROVAL`, `SOURCE_AUTOMATION_RIGHTS`, `SOURCE_HISTORICAL_STORAGE_RIGHTS`, `SOURCE_TERMS_URL`, `SOURCE_FRESHNESS_CONTRACT`, `SOURCE_FALLBACK_POLICY` and `SOURCE_REVIEW_NOTES`. Until then allocation remains fail-closed.
 
@@ -27,7 +27,7 @@ The daily cycle requests every source once per day; extra runs are manual (`npm 
 - BTC/ETH ETF flows: daily after US market data publication.
 - US net liquidity: weekly after the H.4.1 publication; the job reconciles all three FRED components on the same observation date.
 
-Manual verification commands are `npm run smoke:providers`, `npm run smoke:global-liquidity`, `npm run smoke:dollar-strength` (live provider calls without persisting), `npm run ingest:live` and `npm run backfill:phase2`. They require secrets loaded from the ignored `.env.local`. Repeating a live or backfill command is safe: a repeated observation is recorded as a duplicate, never as extra canonical history. `node tests/smoke/database.mjs` checks a migrated database through `CMIP_DB_URL`.
+Manual verification commands are `npm run smoke:providers`, `npm run smoke:global-liquidity`, `npm run smoke:dollar-strength` (live provider calls without persisting), `npm run ingest:live` and `npm run backfill:phase2`. They require secrets loaded from the ignored `.env.local`. Repeating a live or backfill command is safe: a repeated observation is recorded as a duplicate, never as extra canonical history. `node tests/smoke/database.mjs` checks a hosted, migrated database through `CMIP_DB_URL` (it requires TLS, so it does not run against the local Supabase).
 
 ## Regime and decision evaluation
 
@@ -41,7 +41,7 @@ For rollback, deactivate the current engine version and activate a previously re
 
 ## Dashboard
 
-The authenticated routes `/dashboard`, `/assets/btc`, `/assets/eth`, `/history` and `/research` read only stored snapshots and protected health views. If they show no current evaluation, verify the snapshot job rather than adding UI fallback values. The dashboard does not present decisions older than 30 minutes as current; with a once-daily cycle it therefore usually shows them as stale, which is expected and not an incident. Asset pages link to immutable decisions through `/assets/{symbol}?decision={id}`. The daily work happens on `/today`, `/allocation` and `/paper`. If data health shows stale or missing observations, follow the provider-outage/backfill procedure before re-evaluating.
+The authenticated routes `/dashboard`, `/assets/btc`, `/assets/eth`, `/history` and `/research` read only stored snapshots and protected health views. If they show no current evaluation, verify the snapshot job rather than adding UI fallback values. The dashboard does not present decisions older than 30 minutes as current; with a once-daily cycle it therefore usually shows them as stale, which is expected and not an incident. History rows and alerts link to immutable decisions through `/assets/{symbol}?decision={id}`. The daily work happens on `/today`, `/allocation` and `/paper`. If data health shows stale or missing observations, follow the provider-outage/backfill procedure before re-evaluating.
 
 ## Database setup and rollback
 

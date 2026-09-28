@@ -14,9 +14,11 @@ Dependencies point inward. `apps/web` may consume structured output, but signal 
 
 ```text
 providers -> raw observations -> canonical observations -> indicator snapshots
-  -> regime snapshots -> signal engine -> decision snapshots -> notifications
-  -> allocation recommendations -> human decision -> paper portfolio -> outcomes
-                                                       -> web experience
+  -> regime snapshots -> signal engine -> decision snapshots
+       decision snapshots -> notifications
+       decision snapshots -> allocation recommendations -> human decision
+                          -> paper portfolio -> outcomes
+  all stored outputs -> web experience (read only)
 ```
 
 ## Data flow and auditability

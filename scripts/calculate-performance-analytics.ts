@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { calculationTime } from "./lib/runtime";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -10,6 +11,7 @@ const db = createClient(
   required("SUPABASE_SERVICE_ROLE_KEY"),
   { auth: { persistSession: false } },
 );
+const at = calculationTime();
 const pct = (a: number, b: number) => (b === 0 ? 0 : a / b - 1);
 const mean = (xs: number[]) =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
@@ -30,6 +32,7 @@ for (const portfolio of portfolios ?? []) {
     .from("paper_nav")
     .select("calculated_at,nav,benchmark_nav,attribution")
     .eq("paper_portfolio_id", portfolio.id)
+    .lte("calculated_at", at.toISOString())
     .order("calculated_at");
   if (error) throw error;
   if (!rows || rows.length < 2) {
@@ -146,16 +149,23 @@ for (const portfolio of portfolios ?? []) {
     overlappingSamples: false,
     falsePositiveRate: null,
   };
-  const inserted = await db.from("performance_analytics").insert({
-    paper_portfolio_id: portfolio.id,
-    calculated_at: new Date().toISOString(),
-    window_start: rows[0]!.calculated_at.slice(0, 10),
-    window_end: last.calculated_at.slice(0, 10),
-    metrics,
-    attribution,
-    calibration,
-    methodology_version: "performance-v1-shadow",
-  });
+  // Keyed by the cycle's calculation time, so a re-run adds nothing.
+  const inserted = await db.from("performance_analytics").upsert(
+    {
+      paper_portfolio_id: portfolio.id,
+      calculated_at: at.toISOString(),
+      window_start: rows[0]!.calculated_at.slice(0, 10),
+      window_end: last.calculated_at.slice(0, 10),
+      metrics,
+      attribution,
+      calibration,
+      methodology_version: "performance-v1-shadow",
+    },
+    {
+      onConflict: "paper_portfolio_id,calculated_at,methodology_version",
+      ignoreDuplicates: true,
+    },
+  );
   if (inserted.error) throw inserted.error;
   output.push({ id: portfolio.id, status: "CALCULATED", days: rows.length });
 }
