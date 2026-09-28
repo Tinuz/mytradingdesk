@@ -90,7 +90,7 @@ for (const user of users.users) {
       .limit(1)
       .maybeSingle();
   let positions = previous
-      ? (previous.positions as Record<string, number>)
+      ? (previous.positions as Record<"BTC" | "ETH", number>)
       : { BTC: 0, ETH: 0 },
     cash = previous ? Number(previous.cash) : Number(paper.initial_capital),
     nav = cash + positions.BTC * prices.BTC + positions.ETH * prices.ETH;
@@ -221,7 +221,7 @@ for (const user of users.users) {
       BTC: prices.BTC,
       ETH: prices.ETH,
       capital: Number(paper.initial_capital),
-    }) as Record<string, number>,
+    }) as Record<"BTC" | "ETH" | "capital", number>,
     cashDaily = rate
       ? Number(paper.initial_capital) *
         0.5 *

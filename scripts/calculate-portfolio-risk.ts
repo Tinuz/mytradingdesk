@@ -43,7 +43,7 @@ const [b, e] = await Promise.all([prices("BTC_USD"), prices("ETH_USD")]),
     .select("*")
     .lte("snapshot_at", at.toISOString())
     .order("snapshot_at", { ascending: false }),
-  latest = new Map<string, (typeof snapshots)[number]>();
+  latest = new Map<string, NonNullable<typeof snapshots>[number]>();
 for (const s of snapshots ?? [])
   if (!latest.has(s.user_id)) latest.set(s.user_id, s);
 const out = [];

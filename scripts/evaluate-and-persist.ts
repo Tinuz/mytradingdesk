@@ -5,7 +5,6 @@ import {
   evaluateRegimes,
   type EngineIndicator,
   type EngineObservation,
-  type ObservationSeries,
   type RegimeResult,
   type TransitionMemory,
 } from "../packages/signal-engine/src";
@@ -49,7 +48,7 @@ function regimeConfidence(result: RegimeResult<string>): ConfidenceLevel {
 }
 
 const rows = await allCanonical();
-const observations: ObservationSeries = {};
+const observations: Partial<Record<EngineIndicator, EngineObservation[]>> = {};
 for (const row of rows) {
   const indicator = (row.indicators as { code: EngineIndicator }).code;
   const item: EngineObservation = {
@@ -145,7 +144,7 @@ for (const asset of assets ?? []) {
     macro: regimes.macro,
     cryptoLiquidity: regimes.cryptoLiquidity,
     asset: assetResult,
-    memory,
+    ...(memory ? { memory } : {}),
   });
   if (decision.status !== "AVAILABLE" || decision.state === null)
     throw new Error(`${symbol} decision is unavailable; persistence blocked`);

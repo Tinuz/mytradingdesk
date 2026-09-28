@@ -3,7 +3,6 @@ import {
   evaluateRegimes,
   type EngineIndicator,
   type EngineObservation,
-  type ObservationSeries,
 } from "../packages/signal-engine/src";
 
 const required = (name: string) => {
@@ -32,7 +31,7 @@ for (let from = 0; ; from += 1_000) {
   data.push(...(page as typeof data));
   if (!page || page.length < 1_000) break;
 }
-const observations: ObservationSeries = {};
+const observations: Partial<Record<EngineIndicator, EngineObservation[]>> = {};
 for (const row of data) {
   const indicator = (row.indicators as { code: EngineIndicator }).code;
   const item: EngineObservation = {

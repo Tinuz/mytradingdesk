@@ -43,7 +43,6 @@ const loanResult = await pipeline.ingest(
 console.log(
   JSON.stringify({
     indicator: "DEFI_ACTIVE_LOANS_USD",
-    received: loans.length,
     ...loanResult,
   }),
 );
@@ -56,7 +55,7 @@ for (const indicator of [
 ] as const) {
   const rows = await etfProvider.fetchRange(indicator, etfFrom, to);
   const result = await pipeline.ingest(etfProvider, indicator, rows);
-  console.log(JSON.stringify({ indicator, received: rows.length, ...result }));
+  console.log(JSON.stringify({ indicator, ...result }));
 }
 
 async function canonical(code: string): Promise<CalculationPoint[]> {

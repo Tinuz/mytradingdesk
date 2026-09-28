@@ -65,7 +65,6 @@ console.log(
     indicator: "GLOBAL_LIQUIDITY_USD",
     provider: globalProvider.name,
     rangeDays: 3650,
-    received: globalObservations.length,
     ...globalResult,
   }),
 );

@@ -72,7 +72,7 @@ for (const user of userPage.users) {
       .lte("calculated_at", at.toISOString())
       .order("calculated_at", { ascending: false })
       .limit(20),
-    latest = new Map<string, (typeof decisions)[number]>();
+    latest = new Map<string, NonNullable<typeof decisions>[number]>();
   for (const d of decisions ?? [])
     if (!latest.has(d.symbol)) latest.set(d.symbol, d);
   const { data: assets } = await c

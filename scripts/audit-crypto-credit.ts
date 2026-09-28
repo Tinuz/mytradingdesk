@@ -37,7 +37,8 @@ for (const code of [
     .limit(1)
     .maybeSingle();
   if (latestError) throw latestError;
+  const row = data as Record<string, unknown> | null;
   console.log(
-    JSON.stringify({ code, store: base, count, latest: data?.[time] ?? null }),
+    JSON.stringify({ code, store: base, count, latest: row?.[time] ?? null }),
   );
 }

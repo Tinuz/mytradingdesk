@@ -46,7 +46,7 @@ for (const portfolio of portfolios ?? []) {
       "quantity,price,fee,slippage,recommendation_id,allocation_recommendations!inner(analyst_signoffs(action))",
     )
     .eq("paper_portfolio_id", portfolio.id)
-    .gte("executed_at", rows[0].calculated_at)
+    .gte("executed_at", rows[0]!.calculated_at)
     .lte("executed_at", rows.at(-1)!.calculated_at);
   if (tradeError) throw tradeError;
   const navs = rows.map((r) => Number(r.nav)),

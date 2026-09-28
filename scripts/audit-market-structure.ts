@@ -34,12 +34,13 @@ for (const code of [
     .limit(1)
     .maybeSingle();
   if (latestError) throw latestError;
+  const row = data as Record<string, unknown> | null;
   console.log(
     JSON.stringify({
       code,
       count,
-      latest: data?.[column] ?? null,
-      value: data?.[valueColumn] ?? null,
+      latest: row?.[column] ?? null,
+      value: row?.[valueColumn] ?? null,
     }),
   );
 }

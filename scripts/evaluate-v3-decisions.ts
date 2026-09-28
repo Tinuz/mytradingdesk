@@ -95,7 +95,7 @@ for (const asset of assets ?? []) {
     cryptoCreditLiquidity: regime<CryptoCreditLiquidityRegime>(cryptoRow),
     marketStructure: regime<MarketStructureRegime>(marketRow),
     asset: regime<AssetRegime>(assetRow),
-    memory,
+    ...(memory ? { memory } : {}),
   });
   if (decision.status !== "AVAILABLE" || !decision.state)
     throw new Error(`${asset.symbol} decision unavailable`);
