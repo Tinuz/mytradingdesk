@@ -104,3 +104,16 @@ export function modifiedTargetViolations(
     violations.push("CASH_FLOOR");
   return violations;
 }
+
+/** Same midpoint for every asset and cash, within 0.01 percentage point. */
+export function sameTargetMidpoints(a: unknown, b: unknown): boolean {
+  const left = (a ?? {}) as Record<string, { midpoint?: number }>;
+  const right = (b ?? {}) as Record<string, { midpoint?: number }>;
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  return [...keys].every(
+    (key) =>
+      Math.abs(
+        Number(left[key]?.midpoint ?? 0) - Number(right[key]?.midpoint ?? 0),
+      ) < 0.01,
+  );
+}

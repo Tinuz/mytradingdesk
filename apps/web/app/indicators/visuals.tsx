@@ -80,14 +80,14 @@ export function IndicatorChart({
               dataKey="date"
               tickFormatter={day}
               minTickGap={48}
-              tick={{ fill: "#687681", fontSize: 9 }}
+              tick={{ fill: "#8e9ba6", fontSize: 11 }}
               axisLine={{ stroke: "#27323a" }}
               tickLine={false}
             />
             <YAxis
               width={62}
               tickFormatter={(value) => compact(Number(value), series.unit)}
-              tick={{ fill: "#687681", fontSize: 9 }}
+              tick={{ fill: "#8e9ba6", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
             />

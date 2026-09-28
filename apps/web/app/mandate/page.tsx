@@ -5,8 +5,8 @@ import {
   currentInvestorMandate,
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
+import { label } from "../ui/labels";
 
-const pretty = (value: string) => value.toLowerCase().replaceAll("_", " ");
 const number = (data: FormData, key: string) => Number(data.get(key));
 
 export default async function MandatePage() {
@@ -187,17 +187,24 @@ export default async function MandatePage() {
             <div className="panel-head">
               <div>
                 <span className="overline">Actieve versie</span>
-                <h2>{mandate?.version ?? "Nog niet ingesteld"}</h2>
+                <h2>
+                  {mandate
+                    ? `Geldig sinds ${new Date(mandate.effective_at).toLocaleDateString("nl-NL", { dateStyle: "long" })}`
+                    : "Nog niet ingesteld"}
+                </h2>
+                {mandate && <small className="muted">{mandate.version}</small>}
               </div>
               {mandate && (
-                <span className="warning-badge">{mandate.evidence_status}</span>
+                <span className="warning-badge">
+                  {label(mandate.evidence_status)}
+                </span>
               )}
             </div>
             {mandate ? (
               <div className="horizon-grid">
                 <div>
                   <small>Doel</small>
-                  <strong>{pretty(mandate.objective)}</strong>
+                  <strong>{label(mandate.objective)}</strong>
                 </div>
                 <div>
                   <small>Horizon</small>

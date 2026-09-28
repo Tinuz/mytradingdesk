@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { viewMode } from "../lib/view-mode";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -6,11 +7,11 @@ export const metadata: Metadata = {
   description: "Explainable macro and crypto regime intelligence",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="nl">
+    <html lang="nl" data-view-mode={await viewMode()}>
       <body>{children}</body>
     </html>
   );

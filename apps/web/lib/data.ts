@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import {
   modifiedTargetViolations,
   parsePortfolioCsv,
+  sameTargetMidpoints,
   RECOMMENDATION_OUTCOME_VERSION,
   type ModifiedRanges,
   type TargetRanges,
@@ -436,36 +437,54 @@ export async function operationalHealth() {
     trust: trust.data ?? [],
   };
 }
+/**
+ * "Actionable only" keeps warnings, critical alerts and every decision or
+ * market-structure change. Uses the alert engine's own vocabulary
+ * (packages/notifications): severities INFO/WARNING/CRITICAL and types
+ * DECISION_CHANGE, REGIME_CHANGE, MARKET_STRUCTURE_RISK, DATA_QUALITY.
+ */
+const ACTIONABLE_ALERTS =
+  "severity.in.(WARNING,CRITICAL),alert_type.in.(DECISION_CHANGE,MARKET_STRUCTURE_RISK)";
+async function actionableOnly(
+  client: NonNullable<Awaited<ReturnType<typeof database>>>,
+) {
+  const { data } = await client
+    .from("user_product_settings")
+    .select("actionable_notifications_only")
+    .maybeSingle();
+  return Boolean(data?.actionable_notifications_only);
+}
 export async function notificationInbox() {
   const client = await database();
   if (!client) return [] as NotificationView[];
-  const { data, error } = await client
+  let query = client
     .from("notification_inbox")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(100);
+  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
+  const { data, error } = await query;
   if (error) {
     handleQueryError("notification_inbox", error);
     return [];
   }
-  const { data: settings } = await client
-    .from("user_product_settings")
-    .select("actionable_notifications_only")
-    .maybeSingle();
-  const rows = data as NotificationView[];
-  return settings?.actionable_notifications_only
-    ? rows.filter(
-        (x) =>
-          ["HIGH", "CRITICAL"].includes(x.severity) ||
-          [
-            "DECISION_TRANSITION",
-            "RISK_OVERRIDE",
-            "DATA_FREEZE",
-            "MANDATE_BREACH",
-            "THESIS_INVALIDATED",
-          ].includes(x.alert_type),
-      )
-    : rows;
+  return data as NotificationView[];
+}
+/** Unread alerts under the same filter the inbox applies. */
+export async function unreadNotificationCount() {
+  const client = await database();
+  if (!client) return 0;
+  let query = client
+    .from("notification_inbox")
+    .select("id", { count: "exact", head: true })
+    .is("read_at", null);
+  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
+  const { count, error } = await query;
+  if (error) {
+    handleQueryError("notification_inbox", error);
+    return 0;
+  }
+  return count ?? 0;
 }
 export async function notificationPreference() {
   const client = await database();
@@ -504,20 +523,13 @@ export async function markNotificationsRead() {
   if (!client) throw new Error("Database niet geconfigureerd");
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw new Error("Niet geautoriseerd");
-  const { data: settings } = await client
-    .from("user_product_settings")
-    .select("actionable_notifications_only")
-    .maybeSingle();
   let query = client
     .from("alerts")
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", userData.user.id)
     .is("read_at", null);
-  if (settings?.actionable_notifications_only) {
-    query = query.or(
-      "severity.in.(HIGH,CRITICAL),alert_type.in.(DECISION_TRANSITION,RISK_OVERRIDE,DATA_FREEZE,MANDATE_BREACH,THESIS_INVALIDATED)",
-    );
-  }
+  // Only mark what the inbox shows as read.
+  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
   const { error } = await query;
   if (error) throw error;
 }
@@ -1236,6 +1248,8 @@ export async function signoffRecommendation(input: {
         allowedAssets: mandate.allowed_assets,
       },
     );
+    if (violations.includes("NO_CHANGES"))
+      throw new Error("Pas minstens één bandbreedte aan of kies Akkoord");
     if (violations.includes("CASH_FLOOR"))
       throw new Error("Gewijzigde ranges overtreden de cashvloer");
     if (violations.length)
@@ -1543,6 +1557,8 @@ export async function todayWorkspace() {
       mandate: null,
       recommendation: null,
       signoff: null,
+      lastDecision: null,
+      unchangedSinceDecision: false,
       events: [],
       theses: [],
       paper: null,
@@ -1559,7 +1575,7 @@ export async function todayWorkspace() {
         .maybeSingle(),
       client
         .from("data_quality_events")
-        .select("id,severity,event_type,details,created_at")
+        .select("id,severity,event_type,details,created_at,indicators(code)")
         .is("resolved_at", null)
         .order("created_at", { ascending: false })
         .limit(10),
@@ -1589,22 +1605,47 @@ export async function todayWorkspace() {
     ["paper_nav", paper],
   ] as const)
     if (result.error) handleQueryError(source, result.error);
-  let signoff = null;
-  if (recommendation.data) {
-    const result = await client
-      .from("analyst_signoffs")
-      .select("*")
-      .eq("recommendation_id", recommendation.data.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    signoff = result.data;
-  }
+  // The latest human decision, whichever recommendation it was made on.
+  const { data: lastDecision, error: lastDecisionError } = await client
+    .from("analyst_signoffs")
+    .select(
+      "id,action,rationale,created_at,recommendation_id,allocation_recommendations(status,target_ranges)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastDecisionError)
+    handleQueryError("analyst_signoffs", lastDecisionError);
+  const signoff =
+    lastDecision && lastDecision.recommendation_id === recommendation.data?.id
+      ? lastDecision
+      : null;
+  const decided = lastDecision?.allocation_recommendations as unknown as {
+    status: string;
+    target_ranges: Record<string, { midpoint?: number }>;
+  } | null;
+  // The daily cycle writes a fresh recommendation every day. When it proposes
+  // the same targets as the one already decided on, there is nothing new to
+  // review.
+  const unchangedSinceDecision = Boolean(
+    recommendation.data &&
+    !signoff &&
+    decided &&
+    // "Decide later" still asks for a decision.
+    lastDecision?.action !== "DEFER" &&
+    decided.status === recommendation.data.status &&
+    sameTargetMidpoints(
+      decided.target_ranges,
+      recommendation.data.target_ranges,
+    ),
+  );
   return {
     settings: settings.data,
     mandate: mandate.data,
     recommendation: recommendation.data,
     signoff,
+    lastDecision,
+    unchangedSinceDecision,
     events: events.data ?? [],
     theses: theses.data ?? [],
     paper: paper.data,

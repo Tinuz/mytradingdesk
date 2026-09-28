@@ -91,6 +91,7 @@ export default async function PaperPage() {
           </div>
         </div>
         <PaperChart
+          initialCapital={initial}
           rows={
             w.nav as Array<{
               calculated_at: string;

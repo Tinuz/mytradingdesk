@@ -8,6 +8,7 @@ import {
 import { Shell } from "../ui/shell";
 import { ScenarioPreview } from "./scenario-preview";
 import { GuidedJourney } from "../ui/guided-journey";
+import { label, warningLabel } from "../ui/labels";
 const num = (f: FormData, k: string) => Number(f.get(k));
 const actionLabels: Record<string, string> = {
   APPROVE: "Akkoord",
@@ -64,6 +65,12 @@ export default async function AllocationPage() {
         (asset) => ["BTC", "ETH"].includes(asset),
       ),
     );
+    const proposed = (w.recommendation?.target_ranges ?? {}) as Record<
+      string,
+      { minimum: number; maximum: number }
+    >;
+    // Submit only the ranges the user actually changed: an untouched asset
+    // keeps the model's own midpoint instead of its range middle.
     const guidedTargets = Object.fromEntries(
       ["BTC", "ETH"]
         .filter((asset) => allowedAssets.has(asset))
@@ -73,7 +80,14 @@ export default async function AllocationPage() {
             minimum: Number(f.get(`${asset.toLowerCase()}_minimum`)),
             maximum: Number(f.get(`${asset.toLowerCase()}_maximum`)),
           },
-        ]),
+        ])
+        .filter(
+          ([asset, range]) =>
+            (range as { minimum: number }).minimum !==
+              Number(proposed[asset as string]?.minimum) ||
+            (range as { maximum: number }).maximum !==
+              Number(proposed[asset as string]?.maximum),
+        ),
     );
     await signoffRecommendation({
       recommendationId: String(f.get("recommendation_id")),
@@ -433,11 +447,11 @@ export default async function AllocationPage() {
       </section>
       {r && (
         <section
-          className={`trust-banner ${r.status === "AVAILABLE" ? "" : "stale"}`}
+          className={`trust-banner ${r.status === "AVAILABLE" && !warnings.length ? "current" : ""}`}
         >
-          <strong>{String(r.status)}</strong>
+          <strong>{label(String(r.status))}</strong>
           <span>
-            {((r.warnings ?? []) as string[]).join(" · ") ||
+            {warnings.map(warningLabel).join(" · ") ||
               "Geen actieve waarschuwingen"}
           </span>
         </section>

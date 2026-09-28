@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   modifiedTargetViolations,
+  sameTargetMidpoints,
   resolveExecutionTargets,
   type TargetRanges,
 } from "./targets";
@@ -95,5 +96,15 @@ describe("modified target validation", () => {
     expect(modifiedTargetViolations(capped, {}, mandate)).toEqual([
       "NO_CHANGES",
     ]);
+  });
+});
+
+describe("unchanged recommendations", () => {
+  it("compares midpoints of every asset and cash", () => {
+    expect(sameTargetMidpoints(capped, structuredClone(capped))).toBe(true);
+    expect(
+      sameTargetMidpoints(capped, { ...capped, ETH: range(5, 15, 10.5) }),
+    ).toBe(false);
+    expect(sameTargetMidpoints(capped, { BTC: capped.BTC })).toBe(false);
   });
 });
