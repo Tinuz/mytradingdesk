@@ -2,7 +2,16 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { parsePortfolioCsv } from "@cmip/domain";
+import { SIGNOFF_PROBLEMS, type SignoffProblem } from "./signoff-problems";
+import {
+  isUnchangedRecommendation,
+  modifiedTargetViolations,
+  parsePortfolioCsv,
+  type RecommendationSnapshot,
+  RECOMMENDATION_OUTCOME_VERSION,
+  type ModifiedRanges,
+  type TargetRanges,
+} from "@cmip/domain";
 
 export interface Factor {
   code: string;
@@ -272,6 +281,8 @@ export interface IndicatorSeries {
   source_type: "CANONICAL" | "DERIVED";
   points: Array<{ date: string; value: number; quality: string }>;
 }
+/** PostgREST returns at most this many rows per request. */
+const PAGE_SIZE = 1_000;
 async function database() {
   const store = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -428,36 +439,61 @@ export async function operationalHealth() {
     trust: trust.data ?? [],
   };
 }
+/**
+ * "Actionable only" keeps warnings, critical alerts and every decision or
+ * market-structure change. Uses the alert engine's own vocabulary
+ * (packages/notifications): severities INFO/WARNING/CRITICAL and types
+ * DECISION_CHANGE, REGIME_CHANGE, MARKET_STRUCTURE_RISK, DATA_QUALITY.
+ */
+const ACTIONABLE_ALERTS =
+  "severity.in.(WARNING,CRITICAL),alert_type.in.(DECISION_CHANGE,MARKET_STRUCTURE_RISK)";
+async function actionableOnly(
+  client: NonNullable<Awaited<ReturnType<typeof database>>>,
+) {
+  const { data } = await client
+    .from("user_product_settings")
+    .select("actionable_notifications_only")
+    .maybeSingle();
+  return Boolean(data?.actionable_notifications_only);
+}
 export async function notificationInbox() {
   const client = await database();
   if (!client) return [] as NotificationView[];
-  const { data, error } = await client
+  let query = client
     .from("notification_inbox")
     .select("*")
     .order("created_at", { ascending: false })
     .limit(100);
+  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
+  const { data, error } = await query;
   if (error) {
     handleQueryError("notification_inbox", error);
     return [];
   }
-  const { data: settings } = await client
-    .from("user_product_settings")
-    .select("actionable_notifications_only")
-    .maybeSingle();
-  const rows = data as NotificationView[];
-  return settings?.actionable_notifications_only
-    ? rows.filter(
-        (x) =>
-          ["HIGH", "CRITICAL"].includes(x.severity) ||
-          [
-            "DECISION_TRANSITION",
-            "RISK_OVERRIDE",
-            "DATA_FREEZE",
-            "MANDATE_BREACH",
-            "THESIS_INVALIDATED",
-          ].includes(x.alert_type),
-      )
-    : rows;
+  return data as NotificationView[];
+}
+/** Unread alerts under the same filter the inbox applies. */
+export async function unreadNotificationCount() {
+  const client = await database();
+  if (!client) return 0;
+  // Runs on every page (navigation badge): read the setting and both counts
+  // in parallel instead of one after the other.
+  const unread = () =>
+    client
+      .from("notification_inbox")
+      .select("id", { count: "exact", head: true })
+      .is("read_at", null);
+  const [onlyActionable, all, actionable] = await Promise.all([
+    actionableOnly(client),
+    unread(),
+    unread().or(ACTIONABLE_ALERTS),
+  ]);
+  const result = onlyActionable ? actionable : all;
+  if (result.error) {
+    handleQueryError("notification_inbox", result.error);
+    return 0;
+  }
+  return result.count ?? 0;
 }
 export async function notificationPreference() {
   const client = await database();
@@ -496,20 +532,13 @@ export async function markNotificationsRead() {
   if (!client) throw new Error("Database niet geconfigureerd");
   const { data: userData, error: userError } = await client.auth.getUser();
   if (userError || !userData.user) throw new Error("Niet geautoriseerd");
-  const { data: settings } = await client
-    .from("user_product_settings")
-    .select("actionable_notifications_only")
-    .maybeSingle();
   let query = client
     .from("alerts")
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", userData.user.id)
     .is("read_at", null);
-  if (settings?.actionable_notifications_only) {
-    query = query.or(
-      "severity.in.(HIGH,CRITICAL),alert_type.in.(DECISION_TRANSITION,RISK_OVERRIDE,DATA_FREEZE,MANDATE_BREACH,THESIS_INVALIDATED)",
-    );
-  }
+  // Only mark what the inbox shows as read.
+  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
   const { error } = await query;
   if (error) throw error;
 }
@@ -1166,6 +1195,17 @@ export async function appendScenarioSet(input: {
   });
   if (error) throw error;
 }
+export {
+  SIGNOFF_PROBLEMS,
+  signoffProblemMessage,
+  type SignoffProblem,
+} from "./signoff-problems";
+/** A sign-off the user can correct; carries a code, never free text. */
+export class SignoffError extends Error {
+  constructor(readonly code: SignoffProblem) {
+    super(SIGNOFF_PROBLEMS[code]);
+  }
+}
 export async function signoffRecommendation(input: {
   recommendationId: string;
   action: string;
@@ -1177,71 +1217,71 @@ export async function signoffRecommendation(input: {
     user = await ownedUser(client),
     actions = new Set(["APPROVE", "MODIFY", "REJECT", "DEFER"]);
   if (!actions.has(input.action) || input.rationale.trim().length < 10)
-    throw new Error("Ongeldige sign-off");
+    throw new SignoffError("invalid-input");
   const { data: r } = await client!
     .from("allocation_recommendations")
     .select(
-      "id,mandate_id,target_ranges,investor_mandates(minimum_cash_percent,maximum_asset_weight_percent,allowed_assets)",
+      "id,status,mandate_id,target_ranges,investor_mandates(minimum_cash_percent,maximum_asset_weight_percent,allowed_assets)",
     )
     .eq("id", input.recommendationId)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!r) throw new Error("Aanbeveling niet gevonden");
-  let modifiedTargets: Record<string, unknown> | null = null;
+  if (!r) throw new SignoffError("not-found");
+  // A frozen or infeasible recommendation has nothing to execute.
+  if (
+    (input.action === "APPROVE" || input.action === "MODIFY") &&
+    r.status !== "AVAILABLE"
+  )
+    throw new SignoffError("not-available");
+  let modifiedTargets: ModifiedRanges | null = null;
   if (input.action === "MODIFY") {
+    let parsed: unknown;
     try {
-      modifiedTargets = JSON.parse(input.modifiedTargets ?? "");
+      parsed = JSON.parse(input.modifiedTargets ?? "");
     } catch {
-      throw new Error("MODIFY vereist geldige target-JSON");
+      throw new SignoffError("invalid-json");
     }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new SignoffError("invalid-json");
+    const proposed = (r.target_ranges ?? {}) as TargetRanges;
+    // Store only the fields execution reads (a supplied midpoint is ignored)
+    // and only ranges that differ from the proposal: an untouched asset keeps
+    // the model's own midpoint instead of its range middle.
+    modifiedTargets = Object.fromEntries(
+      Object.entries(parsed as Record<string, Record<string, unknown>>)
+        .map(
+          ([asset, range]) =>
+            [
+              asset,
+              {
+                minimum: Number(range?.minimum),
+                maximum: Number(range?.maximum),
+              },
+            ] as const,
+        )
+        .filter(
+          ([asset, range]) =>
+            range.minimum !== Number(proposed[asset]?.minimum) ||
+            range.maximum !== Number(proposed[asset]?.maximum),
+        ),
+    );
     const mandate = r.investor_mandates as unknown as {
-        minimum_cash_percent: number;
-        maximum_asset_weight_percent: number;
-        allowed_assets: string[];
+      minimum_cash_percent: number;
+      maximum_asset_weight_percent: number;
+      allowed_assets: string[];
+    };
+    const violations = modifiedTargetViolations(
+      r.target_ranges as TargetRanges,
+      modifiedTargets,
+      {
+        minimumCashPercent: Number(mandate.minimum_cash_percent),
+        maximumAssetWeightPercent: Number(mandate.maximum_asset_weight_percent),
+        allowedAssets: mandate.allowed_assets,
       },
-      changes = modifiedTargets as Record<
-        string,
-        { minimum?: number; maximum?: number }
-      >,
-      allowed = new Set(["BTC", "ETH"]),
-      entries = Object.entries(changes);
-    if (
-      !entries.length ||
-      entries.some(
-        ([asset, x]) =>
-          !allowed.has(asset) ||
-          !mandate.allowed_assets.includes(asset) ||
-          !Number.isFinite(Number(x.minimum)) ||
-          !Number.isFinite(Number(x.maximum)) ||
-          Number(x.minimum) < 0 ||
-          Number(x.maximum) < Number(x.minimum) ||
-          Number(x.maximum) > Number(mandate.maximum_asset_weight_percent),
-      )
-    )
-      throw new Error("Gewijzigde ranges overtreden het mandaat");
-    const original = r.target_ranges as Record<
-        string,
-        { minimum: number; maximum: number; midpoint: number }
-      >,
-      merged = Object.fromEntries(
-        Object.entries(original)
-          .filter(([asset]) => asset !== "CASH")
-          .map(([asset, range]) => [asset, changes[asset] ?? range]),
-      ) as Record<string, { minimum?: number; maximum?: number }>;
-    const riskyMinimum = Object.values(merged).reduce(
-        (sum, range) => sum + Number(range.minimum),
-        0,
-      ),
-      riskyMidpoint = Object.values(merged).reduce(
-        (sum, range) =>
-          sum + (Number(range.minimum) + Number(range.maximum)) / 2,
-        0,
-      );
-    if (
-      riskyMinimum > 100 - Number(mandate.minimum_cash_percent) ||
-      riskyMidpoint > 100 - Number(mandate.minimum_cash_percent)
-    )
-      throw new Error("Gewijzigde ranges overtreden de cashvloer");
+    );
+    if (violations.includes("NO_CHANGES")) throw new SignoffError("no-changes");
+    if (violations.includes("CASH_FLOOR")) throw new SignoffError("cash-floor");
+    if (violations.length) throw new SignoffError("mandate");
   }
   const { error } = await client!.from("analyst_signoffs").insert({
     user_id: user.id,
@@ -1497,10 +1537,14 @@ export async function addThesisEvidence(input: {
 export async function productExperience() {
   const client = await database();
   if (!client) return null;
-  const { data } = await client
+  const { data, error } = await client
     .from("user_product_settings")
     .select("*")
     .maybeSingle();
+  if (error) {
+    handleQueryError("user_product_settings", error);
+    throw new Error("Productinstellingen konden niet worden geladen");
+  }
   return data;
 }
 export async function completeGuidedOnboarding(input: {
@@ -1541,6 +1585,8 @@ export async function todayWorkspace() {
       mandate: null,
       recommendation: null,
       signoff: null,
+      lastDecision: null,
+      unchangedSinceDecision: false,
       events: [],
       theses: [],
       paper: null,
@@ -1557,7 +1603,7 @@ export async function todayWorkspace() {
         .maybeSingle(),
       client
         .from("data_quality_events")
-        .select("id,severity,event_type,details,created_at")
+        .select("id,severity,event_type,details,created_at,indicators(code)")
         .is("resolved_at", null)
         .order("created_at", { ascending: false })
         .limit(10),
@@ -1573,22 +1619,54 @@ export async function todayWorkspace() {
         .limit(1)
         .maybeSingle(),
     ]);
-  let signoff = null;
-  if (recommendation.data) {
-    const result = await client
-      .from("analyst_signoffs")
-      .select("*")
-      .eq("recommendation_id", recommendation.data.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    signoff = result.data;
+  // Without settings the page would wrongly send the user to onboarding, so a
+  // failed settings query must surface as an error instead.
+  if (settings.error) {
+    handleQueryError("user_product_settings", settings.error);
+    throw new Error("Productinstellingen konden niet worden geladen");
   }
+  for (const [source, result] of [
+    ["current_investor_mandate", mandate],
+    ["allocation_recommendations", recommendation],
+    ["data_quality_events", events],
+    ["asset_theses", theses],
+    ["paper_nav", paper],
+  ] as const)
+    if (result.error) handleQueryError(source, result.error);
+  // The latest human decision, whichever recommendation it was made on.
+  const { data: lastDecision, error: lastDecisionError } = await client
+    .from("analyst_signoffs")
+    .select(
+      "id,action,rationale,created_at,recommendation_id,allocation_recommendations(status,target_ranges,warnings,mandate_id)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastDecisionError)
+    handleQueryError("analyst_signoffs", lastDecisionError);
+  const signoff =
+    lastDecision && lastDecision.recommendation_id === recommendation.data?.id
+      ? lastDecision
+      : null;
+  const decided =
+    lastDecision?.allocation_recommendations as unknown as RecommendationSnapshot | null;
+  // The daily cycle writes a fresh recommendation every day. When it proposes
+  // exactly what was already decided on, there is nothing new to review.
+  const unchangedSinceDecision = Boolean(
+    recommendation.data &&
+    !signoff &&
+    decided &&
+    // "Decide later" still asks for a decision.
+    lastDecision?.action !== "DEFER" &&
+    isUnchangedRecommendation(decided, recommendation.data),
+  );
   return {
     settings: settings.data,
     mandate: mandate.data,
     recommendation: recommendation.data,
     signoff,
+    lastDecision,
+    unchangedSinceDecision,
     events: events.data ?? [],
     theses: theses.data ?? [],
     paper: paper.data,
@@ -1676,6 +1754,8 @@ export async function validationLearningWorkspace() {
       .select(
         "*,allocation_recommendations(calculated_at,status,analyst_signoffs(action))",
       )
+      .eq("calculation_version", RECOMMENDATION_OUTCOME_VERSION)
+      .eq("outcome_status", "OBSERVED")
       .order("observed_at", { ascending: false })
       .limit(500),
     client
@@ -1701,18 +1781,27 @@ export async function dashboardHistory() {
     if (runError) handleQueryError("validation_replay_latest", runError);
     return [];
   }
-  const { data, error } = await client
-    .from("validation_replay_points")
-    .select(
-      "evaluation_date,decision_state,macro_state,macro_score,crypto_state,crypto_score,market_structure_state,market_structure_score,asset_state,asset_score,price,dma_200,transitioned,assets(symbol)",
-    )
-    .eq("replay_run_id", run.id)
-    .order("evaluation_date");
-  if (error) {
-    handleQueryError("validation_replay_points", error);
-    return [];
+  // The replay spans years for two assets, which exceeds a single PostgREST
+  // page; the timeline's MAX range needs every row.
+  const data: unknown[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error } = await client
+      .from("validation_replay_points")
+      .select(
+        "evaluation_date,decision_state,macro_state,macro_score,crypto_state,crypto_score,market_structure_state,market_structure_score,asset_state,asset_score,price,dma_200,transitioned,assets(symbol)",
+      )
+      .eq("replay_run_id", run.id)
+      .order("evaluation_date")
+      .order("asset_id")
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      handleQueryError("validation_replay_points", error);
+      return [];
+    }
+    data.push(...(page ?? []));
+    if (!page || page.length < PAGE_SIZE) break;
   }
-  return data as unknown as DashboardHistoryPoint[];
+  return data as DashboardHistoryPoint[];
 }
 
 export async function indicatorSeries(codes: readonly string[]) {
@@ -1738,15 +1827,15 @@ export async function indicatorSeries(codes: readonly string[]) {
           .select("observed_at,value,quality_status")
           .eq("indicator_id", indicator.id)
           .not("value", "is", null)
-          .order("observed_at")
-          .limit(2000),
+          .order("observed_at", { ascending: false })
+          .limit(PAGE_SIZE),
         client
           .from("indicator_snapshots")
           .select("calculated_at,raw_value,calculation_version")
           .eq("indicator_id", indicator.id)
           .not("raw_value", "is", null)
-          .order("calculated_at")
-          .limit(2000),
+          .order("calculated_at", { ascending: false })
+          .limit(PAGE_SIZE),
       ]);
       if (canonical.error || derived.error) {
         handleQueryError(
@@ -1755,12 +1844,16 @@ export async function indicatorSeries(codes: readonly string[]) {
         );
         return null;
       }
-      const canonicalPoints = (canonical.data ?? []).map((row) => ({
-        date: row.observed_at,
-        value: Number(row.value),
-        quality: row.quality_status,
-      }));
-      const derivedPoints = (derived.data ?? []).map((row) => ({
+      // Queried newest-first so long histories keep their latest points;
+      // charts expect ascending order.
+      const canonicalPoints = [...(canonical.data ?? [])]
+        .reverse()
+        .map((row) => ({
+          date: row.observed_at,
+          value: Number(row.value),
+          quality: row.quality_status,
+        }));
+      const derivedPoints = [...(derived.data ?? [])].reverse().map((row) => ({
         date: row.calculated_at,
         value: Number(row.raw_value),
         quality: row.calculation_version,

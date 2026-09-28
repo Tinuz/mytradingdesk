@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ASSET_SYMBOLS, EVIDENCE_STATUSES, INVESTOR_OBJECTIVES, INVESTMENT_REGIME_LABELS_NL, REGIME_SCORES, type CapitalAllocationRecommendation } from "./index";
+import {
+  ASSET_SYMBOLS,
+  EVIDENCE_STATUSES,
+  INVESTOR_OBJECTIVES,
+  INVESTMENT_REGIME_LABELS_NL,
+  REGIME_SCORES,
+  type CapitalAllocationRecommendation,
+} from "./index";
 
 describe("domain vocabulary", () => {
   it("limits normalized scores to five deterministic values", () => {
@@ -15,12 +22,27 @@ describe("domain vocabulary", () => {
   });
 
   it("keeps recommendation evidence separate from data confidence", () => {
-    expect(EVIDENCE_STATUSES).toEqual(["HYPOTHESIS", "SHADOW", "VALIDATED", "RETIRED"]);
-    const recommendation = { evidenceStatus: "SHADOW", targetRangePercent: null } satisfies Pick<CapitalAllocationRecommendation, "evidenceStatus" | "targetRangePercent">;
+    expect(EVIDENCE_STATUSES).toEqual([
+      "HYPOTHESIS",
+      "SHADOW",
+      "VALIDATED",
+      "RETIRED",
+    ]);
+    const recommendation = {
+      evidenceStatus: "SHADOW",
+      targetRangePercent: null,
+    } satisfies Pick<
+      CapitalAllocationRecommendation,
+      "evidenceStatus" | "targetRangePercent"
+    >;
     expect(recommendation.targetRangePercent).toBeNull();
   });
 
   it("uses a closed investor-objective vocabulary", () => {
-    expect(INVESTOR_OBJECTIVES).toEqual(["CAPITAL_PRESERVATION", "BALANCED", "GROWTH"]);
+    expect(INVESTOR_OBJECTIVES).toEqual([
+      "CAPITAL_PRESERVATION",
+      "BALANCED",
+      "GROWTH",
+    ]);
   });
 });

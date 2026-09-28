@@ -7,7 +7,7 @@ import {
   type HistoricalDataProvider,
   type PhaseOneIndicator,
   type ProviderObservation,
-} from "../packages/providers/src";
+} from "@cmip/providers";
 
 const required = (name: string) => {
   const value = process.env[name];

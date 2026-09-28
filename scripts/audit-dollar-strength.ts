@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { V3_REGIME_CONFIG } from "@cmip/signal-engine";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -26,7 +27,7 @@ const { data: regime, error: regimeError } = await client
     "calculated_at,regime_state,regime_score,confidence_level,factor_breakdown",
   )
   .eq("regime_type", "MACRO_LIQUIDITY")
-  .eq("engine_version", "0.5.1-hypothesis.1")
+  .eq("engine_version", V3_REGIME_CONFIG.version)
   .order("calculated_at", { ascending: false })
   .limit(1)
   .maybeSingle();

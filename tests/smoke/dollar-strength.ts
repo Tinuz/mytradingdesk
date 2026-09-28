@@ -1,7 +1,4 @@
-import {
-  EcbDxyProxyProvider,
-  FredBroadDollarProvider,
-} from "../../packages/providers/src";
+import { EcbDxyProxyProvider, FredBroadDollarProvider } from "@cmip/providers";
 
 const to = new Date();
 const from = new Date(to.getTime() - 14 * 86_400_000);

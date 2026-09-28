@@ -12,14 +12,14 @@ export type LiquidityRegime = (typeof LIQUIDITY_REGIMES)[number];
 export type MacroLiquidityRegime = LiquidityRegime;
 export type CryptoCreditLiquidityRegime = LiquidityRegime;
 
-/** @deprecated V2 replay only. New calculations use MacroLiquidityRegime. */
+/** @deprecated Vocabulary of stored v2 snapshots; v3 uses MacroLiquidityRegime. */
 export type MacroRegime =
   | "STRONGLY_RESTRICTIVE"
   | "RESTRICTIVE"
   | "NEUTRAL"
   | "SUPPORTIVE"
   | "STRONGLY_SUPPORTIVE";
-/** @deprecated V2 replay only. New calculations use CryptoCreditLiquidityRegime. */
+/** @deprecated Vocabulary of stored v2 snapshots; v3 uses CryptoCreditLiquidityRegime. */
 export type CryptoLiquidityRegime = LiquidityRegime;
 
 export const MARKET_STRUCTURE_REGIMES = [
@@ -168,4 +168,12 @@ export const INVESTMENT_REGIME_LABELS_NL: Record<InvestmentRegime, string> = {
   DEFENSIVE: "Defensief",
 };
 
+/**
+ * Active methodology for recommendation outcomes. Readers filter on it so
+ * rows written under a superseded methodology are never mixed in.
+ */
+export const RECOMMENDATION_OUTCOME_VERSION =
+  "recommendation-outcome-v2" as const;
+
 export * from "./portfolio";
+export * from "./targets";

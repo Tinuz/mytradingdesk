@@ -1,34 +1,59 @@
 import Link from "next/link";
+import { unreadNotificationCount } from "../../lib/data";
+import { viewMode } from "../../lib/view-mode";
 import { Mark } from "./icons";
 import { ModeToggle } from "./mode-toggle";
-export function Shell({
+
+type Section =
+  | "dashboard"
+  | "allocation"
+  | "governance"
+  | "reviews"
+  | "universe"
+  | "portfolio"
+  | "history"
+  | "journal"
+  | "research"
+  | "notifications"
+  | "validation"
+  | "mandate"
+  | "today"
+  | "paper"
+  | "workbench"
+  | "onboarding";
+
+const primary = [
+  ["today", "Vandaag", "/today"],
+  ["allocation", "Beslissen", "/allocation"],
+  ["paper", "Resultaat", "/paper"],
+] as const;
+const advanced = [
+  ["portfolio", "Werkelijk portfolio", "/portfolio"],
+  ["dashboard", "Marktonderzoek", "/dashboard"],
+  ["reviews", "Reviewqueue", "/reviews"],
+  ["workbench", "Werkbank", "/workbench"],
+  ["history", "Historie", "/history"],
+  ["journal", "Journal", "/journal"],
+  ["mandate", "Mandaat", "/mandate"],
+  ["validation", "Validatie", "/validation"],
+  ["validation-learning", "Beslissingskwaliteit", "/validation/learning"],
+  ["research", "Datakwaliteit", "/research"],
+  ["governance", "Trust", "/governance"],
+  ["universe", "Universe", "/universe"],
+] as const;
+
+export async function Shell({
   children,
   current,
 }: {
   children: React.ReactNode;
-  current:
-    | "dashboard"
-    | "allocation"
-    | "governance"
-    | "reviews"
-    | "universe"
-    | "portfolio"
-    | "history"
-    | "journal"
-    | "research"
-    | "notifications"
-    | "validation"
-    | "mandate"
-    | "today"
-    | "paper"
-    | "workbench"
-    | "onboarding";
+  current: Section;
 }) {
-  const nav = [
-    ["today", "Vandaag", "/today"],
-    ["allocation", "Beslissen", "/allocation"],
-    ["paper", "Resultaat", "/paper"],
-  ] as const;
+  const [unread, mode] = await Promise.all([
+    unreadNotificationCount(),
+    viewMode(),
+  ]);
+  const advancedOpen = advanced.some(([key]) => key === current);
   return (
     <div className="terminal-shell">
       <aside className="sidebar">
@@ -38,39 +63,52 @@ export function Shell({
             CMI<em>Terminal</em>
           </span>
         </Link>
-        <nav aria-label="Hoofdnavigatie">
-          {nav.map(([key, label, href]) => (
+        <nav aria-label="Hoofdnavigatie" className="primary-nav">
+          {primary.map(([key, label, href]) => (
             <Link
               key={key}
               href={href}
               className={current === key ? "active" : ""}
+              aria-current={current === key ? "page" : undefined}
             >
               {label}
             </Link>
           ))}
+          <Link
+            href="/notifications"
+            className={current === "notifications" ? "active" : ""}
+            aria-current={current === "notifications" ? "page" : undefined}
+          >
+            Meldingen
+            {unread > 0 && (
+              <span className="nav-badge">
+                {unread}
+                <span className="visually-hidden"> ongelezen</span>
+              </span>
+            )}
+          </Link>
         </nav>
-        <details className="advanced-nav advanced-only">
+        <details className="advanced-nav advanced-only" open={advancedOpen}>
           <summary>Geavanceerd</summary>
-          <nav>
-            <Link href="/portfolio">Werkelijk portfolio</Link>
-            <Link href="/dashboard">Marktonderzoek</Link>
-            <Link href="/reviews">Reviewqueue</Link>
-            <Link href="/workbench">Werkbank</Link>
-            <Link href="/history">Historie</Link>
-            <Link href="/journal">Journal</Link>
-            <Link href="/mandate">Mandaat</Link>
-            <Link href="/validation">Validatie</Link>
-            <Link href="/validation/learning">Beslissingskwaliteit</Link>
-            <Link href="/research">Datakwaliteit</Link>
-            <Link href="/governance">Trust</Link>
-            <Link href="/universe">Universe</Link>
+          <nav aria-label="Geavanceerde navigatie">
+            {advanced.map(([key, label, href]) => (
+              <Link
+                key={key}
+                href={href}
+                className={current === key ? "active" : ""}
+                aria-current={current === key ? "page" : undefined}
+              >
+                {label}
+              </Link>
+            ))}
           </nav>
         </details>
         <div className="sidebar-foot">
-          <ModeToggle />
-          <span className="live-dot" /> Shadow allocation
-          <br />
-          <small>decision support only</small>
+          <ModeToggle initial={mode} />
+          <p className="sidebar-status">
+            <span className="live-dot" /> Shadow allocation
+            <small>alleen beslisondersteuning</small>
+          </p>
         </div>
       </aside>
       <main className="terminal-main">{children}</main>

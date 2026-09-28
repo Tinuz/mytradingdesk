@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import {
+  V3_DECISION_CONFIG,
+  V3_REGIME_CONFIG,
   evaluateV3Decision,
   evaluateV3Regimes,
   outcomeAt,
@@ -36,8 +38,8 @@ const { data: run, error: runError } = await client
     replay_mode: "RECONSTRUCTED",
     status: "RUNNING",
     started_at: started.toISOString(),
-    regime_engine_version: "0.5.1-hypothesis.1",
-    decision_engine_version: "0.6.1-hypothesis.1",
+    regime_engine_version: V3_REGIME_CONFIG.version,
+    decision_engine_version: V3_DECISION_CONFIG.version,
     methodology_version: "reconstructed-daily-v1",
     limitations,
   })

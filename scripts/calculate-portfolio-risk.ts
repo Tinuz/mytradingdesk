@@ -43,7 +43,7 @@ const [b, e] = await Promise.all([prices("BTC_USD"), prices("ETH_USD")]),
     .select("*")
     .lte("snapshot_at", at.toISOString())
     .order("snapshot_at", { ascending: false }),
-  latest = new Map<string, (typeof snapshots)[number]>();
+  latest = new Map<string, NonNullable<typeof snapshots>[number]>();
 for (const s of snapshots ?? [])
   if (!latest.has(s.user_id)) latest.set(s.user_id, s);
 const out = [];
@@ -58,23 +58,21 @@ for (const s of latest.values()) {
     metrics = portfolioRisk(returns, weights),
     warnings =
       metrics.observations < 90 ? ["LESS_THAN_90_RETURN_OBSERVATIONS"] : [];
-  const { error } = await c
-    .from("portfolio_risk_snapshots")
-    .upsert(
-      {
-        user_id: s.user_id,
-        portfolio_snapshot_id: s.id,
-        calculated_at: at.toISOString(),
-        methodology_version: "portfolio-risk-v1",
-        metrics,
-        binding_constraints: [],
-        warnings,
-      },
-      {
-        onConflict: "portfolio_snapshot_id,methodology_version",
-        ignoreDuplicates: true,
-      },
-    );
+  const { error } = await c.from("portfolio_risk_snapshots").upsert(
+    {
+      user_id: s.user_id,
+      portfolio_snapshot_id: s.id,
+      calculated_at: at.toISOString(),
+      methodology_version: "portfolio-risk-v1",
+      metrics,
+      binding_constraints: [],
+      warnings,
+    },
+    {
+      onConflict: "portfolio_snapshot_id,methodology_version",
+      ignoreDuplicates: true,
+    },
+  );
   if (error) throw error;
   out.push({ user: s.user_id, metrics });
 }

@@ -1,10 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import {
+  V3_DECISION_CONFIG,
+  V3_DECISION_MEMORY_VERSIONS,
+  V3_REGIME_CONFIG,
   evaluateV3Decision,
   type RegimeResult,
   type V3FactorResult,
   type V3TransitionMemory,
-} from "../packages/signal-engine/src";
+} from "@cmip/signal-engine";
 import type {
   AssetRegime,
   CryptoCreditLiquidityRegime,
@@ -42,7 +45,7 @@ async function latest(type: string, assetId?: string) {
       "id,asset_id,regime_score,regime_state,confidence_level,factor_breakdown",
     )
     .eq("regime_type", type)
-    .eq("engine_version", "0.5.1-hypothesis.1")
+    .eq("engine_version", V3_REGIME_CONFIG.version)
     .order("calculated_at", { ascending: false })
     .limit(1);
   query = assetId ? query.eq("asset_id", assetId) : query.is("asset_id", null);
@@ -78,7 +81,7 @@ for (const asset of assets ?? []) {
     .from("decision_snapshots")
     .select("decision_state,pending_state,consecutive_observations")
     .eq("asset_id", asset.id)
-    .in("engine_version", ["0.6.2-hypothesis.1", "0.6.1-hypothesis.1"])
+    .in("engine_version", [...V3_DECISION_MEMORY_VERSIONS])
     .order("calculated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -95,7 +98,7 @@ for (const asset of assets ?? []) {
     cryptoCreditLiquidity: regime<CryptoCreditLiquidityRegime>(cryptoRow),
     marketStructure: regime<MarketStructureRegime>(marketRow),
     asset: regime<AssetRegime>(assetRow),
-    memory,
+    ...(memory ? { memory } : {}),
   });
   if (decision.status !== "AVAILABLE" || !decision.state)
     throw new Error(`${asset.symbol} decision unavailable`);
@@ -133,7 +136,7 @@ for (const asset of assets ?? []) {
 }
 console.log(
   JSON.stringify(
-    { engineVersion: "0.6.2-hypothesis.1", decisions: results },
+    { engineVersion: V3_DECISION_CONFIG.version, decisions: results },
     null,
     2,
   ),

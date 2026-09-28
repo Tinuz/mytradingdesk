@@ -1,3 +1,66 @@
-import{v1GateAssessment}from"../../lib/data";
-const descriptions:Record<string,string>={gate3:"30 dagen aantoonbaar betrouwbare operatie",gate4:"Onafhankelijke samples volgens bevroren protocol",gate5:"Menselijk beslisprotocol en journal",gate6:"90 dagen shadow-run en nul kritieke trustdefecten"};
-export async function V1Gates(){const assessment=await v1GateAssessment();return <section className="panel gate-panel"><div className="panel-head"><div><span className="overline">V1 release control</span><h2>Gates 3–6</h2></div><span className={assessment?.overall_status==="PASSED"?"fresh-badge":"warning-badge"}>{assessment?.overall_status??"NOT ASSESSED"}</span></div>{!assessment?<p className="muted">Voer <code>npm run v1:assess</code> uit na migratie en replay.</p>:<div className="gate-grid">{["gate3","gate4","gate5","gate6"].map((key,index)=>{const gate=assessment.gates[key];return <article key={key}><span className="micro-label">Gate {index+3}</span><strong>{descriptions[key]}</strong><em className={gate?.status==="PASSED"?"fresh-text":"warning-text"}>{gate?.status??"BLOCKED"}</em><small>{key==="gate3"?`${String(gate?.operationalDays??0)}/30 operationele dagen · ${Math.round(Number(gate?.successRate??0)*100)}% succes`:key==="gate4"?`${Array.isArray(gate?.sampleFailures)?gate.sampleFailures.length:0} sampletekorten`:key==="gate5"?`${String(gate?.journalEntries??0)} journalregels`:`${String(gate?.shadowDays??0)}/90 shadowdagen · ${String(gate?.criticalTrustDefects??0)} kritisch`}</small></article>})}</div>}<p className="muted">Protocol {assessment?.protocol_version??"v1-shadow-protocol.1"}. Een geblokkeerde gate verandert de vooraf vastgelegde criteria niet.</p></section>}
+import { v1GateAssessment } from "../../lib/data";
+const descriptions: Record<string, string> = {
+  gate3: "30 dagen aantoonbaar betrouwbare operatie",
+  gate4: "Onafhankelijke samples volgens bevroren protocol",
+  gate5: "Menselijk beslisprotocol en journal",
+  gate6: "90 dagen shadow-run en nul kritieke trustdefecten",
+};
+export async function V1Gates() {
+  const assessment = await v1GateAssessment();
+  return (
+    <section className="panel gate-panel">
+      <div className="panel-head">
+        <div>
+          <span className="overline">V1 release control</span>
+          <h2>Gates 3–6</h2>
+        </div>
+        <span
+          className={
+            assessment?.overall_status === "PASSED"
+              ? "fresh-badge"
+              : "warning-badge"
+          }
+        >
+          {assessment?.overall_status ?? "NOT ASSESSED"}
+        </span>
+      </div>
+      {!assessment ? (
+        <p className="muted">
+          Voer <code>npm run v1:assess</code> uit na migratie en replay.
+        </p>
+      ) : (
+        <div className="gate-grid">
+          {["gate3", "gate4", "gate5", "gate6"].map((key, index) => {
+            const gate = assessment.gates[key];
+            return (
+              <article key={key}>
+                <span className="micro-label">Gate {index + 3}</span>
+                <strong>{descriptions[key]}</strong>
+                <em
+                  className={
+                    gate?.status === "PASSED" ? "fresh-text" : "warning-text"
+                  }
+                >
+                  {gate?.status ?? "BLOCKED"}
+                </em>
+                <small>
+                  {key === "gate3"
+                    ? `${String(gate?.operationalDays ?? 0)}/30 operationele dagen · ${Math.round(Number(gate?.successRate ?? 0) * 100)}% succes`
+                    : key === "gate4"
+                      ? `${Array.isArray(gate?.sampleFailures) ? gate.sampleFailures.length : 0} sampletekorten`
+                      : key === "gate5"
+                        ? `${String(gate?.journalEntries ?? 0)} journalregels`
+                        : `${String(gate?.shadowDays ?? 0)}/90 shadowdagen · ${String(gate?.criticalTrustDefects ?? 0)} kritisch`}
+                </small>
+              </article>
+            );
+          })}
+        </div>
+      )}
+      <p className="muted">
+        Protocol {assessment?.protocol_version ?? "v1-shadow-protocol.1"}. Een
+        geblokkeerde gate verandert de vooraf vastgelegde criteria niet.
+      </p>
+    </section>
+  );
+}

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { calculationTime } from "./lib/runtime";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -10,6 +11,7 @@ const db = createClient(
   required("SUPABASE_SERVICE_ROLE_KEY"),
   { auth: { persistSession: false } },
 );
+const at = calculationTime();
 const pct = (a: number, b: number) => (b === 0 ? 0 : a / b - 1);
 const mean = (xs: number[]) =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
@@ -30,6 +32,7 @@ for (const portfolio of portfolios ?? []) {
     .from("paper_nav")
     .select("calculated_at,nav,benchmark_nav,attribution")
     .eq("paper_portfolio_id", portfolio.id)
+    .lte("calculated_at", at.toISOString())
     .order("calculated_at");
   if (error) throw error;
   if (!rows || rows.length < 2) {
@@ -40,7 +43,15 @@ for (const portfolio of portfolios ?? []) {
     });
     continue;
   }
-  const {data:trades,error:tradeError}=await db.from("paper_trades").select("quantity,price,fee,slippage,recommendation_id,allocation_recommendations!inner(analyst_signoffs(action))").eq("paper_portfolio_id",portfolio.id).gte("executed_at",rows[0].calculated_at).lte("executed_at",rows.at(-1)!.calculated_at);if(tradeError)throw tradeError;
+  const { data: trades, error: tradeError } = await db
+    .from("paper_trades")
+    .select(
+      "quantity,price,fee,slippage,recommendation_id,allocation_recommendations!inner(analyst_signoffs(action))",
+    )
+    .eq("paper_portfolio_id", portfolio.id)
+    .gte("executed_at", rows[0]!.calculated_at)
+    .lte("executed_at", rows.at(-1)!.calculated_at);
+  if (tradeError) throw tradeError;
   const navs = rows.map((r) => Number(r.nav)),
     returns = navs.slice(1).map((v, i) => pct(v, navs[i]!)),
     down = returns.filter((x) => x < 0),
@@ -82,7 +93,25 @@ for (const portfolio of portfolios ?? []) {
         v === null ? null : pct(Number(v), navs[0]!),
       ]),
     ),
-    fees=(trades??[]).reduce((s,t)=>s+Number(t.fee)+Number(t.slippage),0),turnover=(trades??[]).reduce((s,t)=>s+Number(t.quantity)*Number(t.price),0)/navs[0]!,strategyReturn=pct(navs.at(-1)!,navs[0]!),staticReturn=Number(benchmarkReturns.BTC_ETH_60_40??0),cashBenchmarkReturn=Number(benchmarkReturns.BTC_CASH_50_50??0),humanOverrides=(trades??[]).filter(t=>(t.allocation_recommendations as unknown as {analyst_signoffs:Array<{action:string}>})?.analyst_signoffs?.some(x=>x.action==="MODIFY")).length;
+    fees = (trades ?? []).reduce(
+      (s, t) => s + Number(t.fee) + Number(t.slippage),
+      0,
+    ),
+    turnover =
+      (trades ?? []).reduce(
+        (s, t) => s + Number(t.quantity) * Number(t.price),
+        0,
+      ) / navs[0]!,
+    strategyReturn = pct(navs.at(-1)!, navs[0]!),
+    staticReturn = Number(benchmarkReturns.BTC_ETH_60_40 ?? 0),
+    cashBenchmarkReturn = Number(benchmarkReturns.BTC_CASH_50_50 ?? 0),
+    humanOverrides = (trades ?? []).filter((t) =>
+      (
+        t.allocation_recommendations as unknown as {
+          analyst_signoffs: Array<{ action: string }>;
+        }
+      )?.analyst_signoffs?.some((x) => x.action === "MODIFY"),
+    ).length;
   const metrics = {
     sampleDays: rows.length,
     totalReturn: strategyReturn,
@@ -104,12 +133,12 @@ for (const portfolio of portfolios ?? []) {
   };
   const attribution = {
     strategicAllocation: staticReturn,
-    tacticalRegimeResidual: strategyReturn-staticReturn+fees/navs[0]!,
+    tacticalRegimeResidual: strategyReturn - staticReturn + fees / navs[0]!,
     valuation: null,
     assetSelection: null,
     humanOverrideCount: humanOverrides,
-    costs: -fees/navs[0]!,
-    cashDragRelativeToStatic: cashBenchmarkReturn-staticReturn,
+    costs: -fees / navs[0]!,
+    cashDragRelativeToStatic: cashBenchmarkReturn - staticReturn,
     status: "RESIDUAL_ATTRIBUTION_UNTIL_FACTOR_SAMPLE_IS_SUFFICIENT",
   };
   const calibration = {
@@ -120,16 +149,23 @@ for (const portfolio of portfolios ?? []) {
     overlappingSamples: false,
     falsePositiveRate: null,
   };
-  const inserted = await db.from("performance_analytics").insert({
-    paper_portfolio_id: portfolio.id,
-    calculated_at: new Date().toISOString(),
-    window_start: rows[0]!.calculated_at.slice(0, 10),
-    window_end: last.calculated_at.slice(0, 10),
-    metrics,
-    attribution,
-    calibration,
-    methodology_version: "performance-v1-shadow",
-  });
+  // Keyed by the cycle's calculation time, so a re-run adds nothing.
+  const inserted = await db.from("performance_analytics").upsert(
+    {
+      paper_portfolio_id: portfolio.id,
+      calculated_at: at.toISOString(),
+      window_start: rows[0]!.calculated_at.slice(0, 10),
+      window_end: last.calculated_at.slice(0, 10),
+      metrics,
+      attribution,
+      calibration,
+      methodology_version: "performance-v1-shadow",
+    },
+    {
+      onConflict: "paper_portfolio_id,calculated_at,methodology_version",
+      ignoreDuplicates: true,
+    },
+  );
   if (inserted.error) throw inserted.error;
   output.push({ id: portfolio.id, status: "CALCULATED", days: rows.length });
 }

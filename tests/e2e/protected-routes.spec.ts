@@ -7,9 +7,18 @@ const routes = [
   "/paper",
   "/reviews",
   "/workbench",
+  "/validation",
   "/validation/learning",
   "/governance",
   "/universe",
+  "/dashboard",
+  "/assets/btc",
+  "/indicators/stablecoins",
+  "/research",
+  "/history",
+  "/journal",
+  "/mandate",
+  "/notifications",
 ];
 for (const route of routes)
   test(`${route} requires authentication`, async ({ page }) => {

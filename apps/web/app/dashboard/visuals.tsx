@@ -270,7 +270,7 @@ export function AssetDetailChart({
                 dataKey="evaluation_date"
                 tickFormatter={short}
                 minTickGap={48}
-                tick={{ fill: "#687681", fontSize: 9 }}
+                tick={{ fill: "#8e9ba6", fontSize: 11 }}
                 axisLine={{ stroke: "#27323a" }}
                 tickLine={false}
               />
@@ -282,7 +282,7 @@ export function AssetDetailChart({
                     value,
                   )
                 }
-                tick={{ fill: "#687681", fontSize: 9 }}
+                tick={{ fill: "#8e9ba6", fontSize: 11 }}
                 axisLine={false}
                 tickLine={false}
               />

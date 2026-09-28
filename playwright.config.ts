@@ -9,7 +9,7 @@ export default defineConfig({
     command: "node tests/e2e/server.mjs",
     url: "http://127.0.0.1:3000/login",
     reuseExistingServer: !process.env.CI,
-    gracefulShutdown: { signal: "SIGINT", timeout: 1_000 }
+    gracefulShutdown: { signal: "SIGINT", timeout: 1_000 },
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }]
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

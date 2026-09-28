@@ -215,7 +215,10 @@ export default async function DashboardPage() {
   const opportunityMove =
     reference.opportunity_score === null
       ? { arrow: "→", label: "UNAVAILABLE" }
-      : direction(reference.opportunity_score, previous?.opportunity_score ?? undefined);
+      : direction(
+          reference.opportunity_score,
+          previous?.opportunity_score ?? undefined,
+        );
   return (
     <Shell current="dashboard">
       <header className="intelligence-head">
@@ -224,7 +227,11 @@ export default async function DashboardPage() {
             Market environment / shadow intelligence
           </span>
           <span className="title-with-info">
-            <h1>{reference.opportunity_state ? pretty(reference.opportunity_state) : "OPPORTUNITY UNAVAILABLE"}</h1>
+            <h1>
+              {reference.opportunity_state
+                ? pretty(reference.opportunity_state)
+                : "OPPORTUNITY UNAVAILABLE"}
+            </h1>
             <InfoTip
               label="Market Environment"
               title="Samenvatting van het marktklimaat"

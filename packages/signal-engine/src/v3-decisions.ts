@@ -6,8 +6,17 @@ import type {
   V3ExplanationFact,
   V3FactorResult,
 } from "./types";
+/**
+ * Decision engine versions whose persisted transition memory the current
+ * version continues from. Their state vocabulary and memory are compatible.
+ */
+export const V3_DECISION_MEMORY_VERSIONS = [
+  "0.6.3-hypothesis.1",
+  "0.6.2-hypothesis.1",
+  "0.6.1-hypothesis.1",
+] as const;
 export const V3_DECISION_CONFIG = {
-  version: "0.6.2-hypothesis.1",
+  version: "0.6.3-hypothesis.1",
   persistenceObservations: 2,
   hysteresis: {
     STRONG_ACCUMULATION: { enter: 5, exit: 3 },
@@ -59,6 +68,22 @@ export function configuredV3Decision(
   )
     return { state: "NEUTRAL", riskOverride: "CAPITULATION_CAP" };
   return { state: base, riskOverride: "NONE" };
+}
+/**
+ * Highest decision state Market Structure permits. The matrix applies the same
+ * caps to candidates; this ceiling also governs a state that hysteresis or
+ * pending confirmation would otherwise hold above it.
+ */
+function stressCeiling(market: RegimeScore): {
+  state: InvestmentRegime;
+  riskOverride: V3DecisionOutput["riskOverride"];
+} | null {
+  if (market >= 1)
+    return { state: "ACCUMULATION", riskOverride: "OVERHEAT_CAP" };
+  if (market === -1) return { state: "NEUTRAL", riskOverride: "STRESS_CAP" };
+  if (market === -2)
+    return { state: "NEUTRAL", riskOverride: "CAPITULATION_CAP" };
+  return null;
 }
 export const V3_DECISION_MATRIX = Object.freeze(
   Object.fromEntries(
@@ -231,15 +256,58 @@ export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
         consecutiveObservations: 0,
       },
     };
+  const unconstrained = transition(
+    previous,
+    candidate,
+    total,
+    configured.riskOverride,
+    input.memory,
+  );
+  // Candidates are already capped by the matrix, so only a state held by
+  // hysteresis or pending confirmation can exceed the Market Structure
+  // ceiling. Risk governance does not wait: the held state drops to the
+  // ceiling now, while a pending lower candidate keeps its confirmation count
+  // so a genuine downgrade still confirms on schedule.
+  const ceiling = stressCeiling(market);
+  if (!ceiling || rank[unconstrained.state] <= rank[ceiling.state])
+    return { ...base, status: "AVAILABLE", ...unconstrained };
+  const pending = unconstrained.memory.pendingState;
+  const keepPending = pending !== null && rank[pending] < rank[ceiling.state];
+  return {
+    ...base,
+    status: "AVAILABLE",
+    state: ceiling.state,
+    candidateState: candidate,
+    transitioned: true,
+    transitionReason: "STRESS_CAP_APPLIED",
+    riskOverride: ceiling.riskOverride,
+    memory: {
+      currentState: ceiling.state,
+      pendingState: keepPending ? pending : null,
+      consecutiveObservations: keepPending
+        ? unconstrained.memory.consecutiveObservations
+        : 0,
+    },
+  };
+}
+/** Hysteresis and two-observation persistence, before stress governance. */
+function transition(
+  previous: InvestmentRegime,
+  candidate: InvestmentRegime,
+  total: number,
+  riskOverride: V3DecisionOutput["riskOverride"],
+  memory: V3DecisionInput["memory"],
+): Pick<
+  V3DecisionOutput,
+  "candidateState" | "transitioned" | "transitionReason" | "riskOverride"
+> & { state: InvestmentRegime; memory: V3DecisionOutput["memory"] } {
   if (candidate === previous || !hysteresis(previous, candidate, total))
     return {
-      ...base,
       state: previous,
       candidateState: candidate,
-      status: "AVAILABLE",
       transitioned: false,
       transitionReason: "HYSTERESIS_HELD",
-      riskOverride: configured.riskOverride,
+      riskOverride,
       memory: {
         currentState: previous,
         pendingState: null,
@@ -247,18 +315,14 @@ export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
       },
     };
   const count =
-    input.memory?.pendingState === candidate
-      ? input.memory.consecutiveObservations + 1
-      : 1;
+    memory?.pendingState === candidate ? memory.consecutiveObservations + 1 : 1;
   if (count < 2)
     return {
-      ...base,
       state: previous,
       candidateState: candidate,
-      status: "AVAILABLE",
       transitioned: false,
       transitionReason: "PENDING_CONFIRMATION",
-      riskOverride: configured.riskOverride,
+      riskOverride,
       memory: {
         currentState: previous,
         pendingState: candidate,
@@ -266,13 +330,11 @@ export function evaluateV3Decision(input: V3DecisionInput): V3DecisionOutput {
       },
     };
   return {
-    ...base,
     state: candidate,
     candidateState: candidate,
-    status: "AVAILABLE",
     transitioned: true,
     transitionReason: "PERSISTENCE_CONFIRMED",
-    riskOverride: configured.riskOverride,
+    riskOverride,
     memory: {
       currentState: candidate,
       pendingState: null,

@@ -1,19 +1,36 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { todayWorkspace } from "../../lib/data";
+import { viewMode } from "../../lib/view-mode";
 import { Shell } from "../ui/shell";
 import { GuidedJourney } from "../ui/guided-journey";
-const labels: Record<string, string> = {
-  AVAILABLE: "Beslissing beschikbaar",
-  FROZEN: "Verhoging geblokkeerd",
-  NO_FEASIBLE_ALLOCATION: "Geen geldige allocatie",
-  APPROVE: "Goedgekeurd voor paperverwerking",
-  MODIFY: "Aangepast voor paperverwerking",
-  REJECT: "Afgewezen",
-  DEFER: "Uitgesteld",
+import { label } from "../ui/labels";
+
+type QualityEvent = {
+  id: string;
+  severity: string;
+  event_type: string;
+  details: unknown;
+  created_at: string;
+  indicators: { code: string } | { code: string }[] | null;
 };
+/** A short readable summary of an event's details, never raw JSON. */
+function eventSummary(event: QualityEvent) {
+  const indicator = Array.isArray(event.indicators)
+    ? event.indicators[0]
+    : event.indicators;
+  const details = (event.details ?? {}) as Record<string, unknown>;
+  const facts = Object.entries(details)
+    .filter(([, value]) =>
+      ["string", "number", "boolean"].includes(typeof value),
+    )
+    .slice(0, 3)
+    .map(([key, value]) => `${label(key)}: ${String(value)}`);
+  return [indicator?.code, ...facts].filter(Boolean).join(" · ");
+}
+
 export default async function TodayPage() {
-  const w = await todayWorkspace();
+  const [w, mode] = await Promise.all([todayWorkspace(), viewMode()]);
   if (!w.settings?.onboarding_completed_at) redirect("/onboarding");
   const critical = w.events.find((x: { severity: string }) =>
     ["CRITICAL", "HIGH"].includes(x.severity),
@@ -48,10 +65,19 @@ export default async function TodayPage() {
     action = {
       tone: "warning",
       eyebrow: "Beslissing geblokkeerd",
-      title: labels[w.recommendation.status] ?? String(w.recommendation.status),
+      title: label(w.recommendation.status),
       body: "De app vraagt geen verhoging zolang data, thesis, waardering of mandaatvoorwaarden onvoldoende zijn.",
       href: "/allocation",
       cta: "Bekijk redenen",
+    };
+  else if (!w.signoff && w.unchangedSinceDecision)
+    action = {
+      tone: "",
+      eyebrow: "Geen actie vereist",
+      title: "Voorstel ongewijzigd sinds je laatste beslissing",
+      body: `Het model stelt dezelfde bandbreedtes voor als toen je besliste (${label(w.lastDecision?.action).toLowerCase()}). Je hoeft niets opnieuw te beoordelen.`,
+      href: "/paper",
+      cta: "Bekijk paperresultaten",
     };
   else if (!w.signoff)
     action = {
@@ -66,7 +92,7 @@ export default async function TodayPage() {
     action = {
       tone: "",
       eyebrow: "Beslissing vastgelegd",
-      title: labels[w.signoff.action] ?? w.signoff.action,
+      title: label(w.signoff.action),
       body: "De originele modeluitkomst blijft ongewijzigd. Een goedgekeurde paperwijziging wordt in de volgende dagelijkse cyclus verwerkt.",
       href: "/paper",
       cta: "Volg paperportfolio",
@@ -85,11 +111,7 @@ export default async function TodayPage() {
         </div>
         <div className="asof">
           Modus
-          <strong>
-            {w.settings.experience_level === "GUIDED"
-              ? "Begeleid"
-              : "Geavanceerd"}
-          </strong>
+          <strong>{mode === "advanced" ? "Geavanceerd" : "Begeleid"}</strong>
         </div>
       </header>
       <section className={`next-action ${action.tone}`}>
@@ -130,7 +152,7 @@ export default async function TodayPage() {
             <strong>Laatste modelsnapshot</strong>
             <p>
               {w.recommendation
-                ? `${labels[w.recommendation.status] ?? w.recommendation.status} · bewijs ${w.recommendation.model_evidence_status}`
+                ? `${label(w.recommendation.status)} · bewijs: ${label(w.recommendation.model_evidence_status).toLowerCase()}`
                 : "Nog niet berekend"}
             </p>
           </div>
@@ -142,7 +164,7 @@ export default async function TodayPage() {
             <strong>Jouw beoordeling</strong>
             <p>
               {w.signoff
-                ? `${labels[w.signoff.action] ?? w.signoff.action} · ${w.signoff.rationale}`
+                ? `${label(w.signoff.action)} · ${w.signoff.rationale}`
                 : "Wacht op jouw besluit zodra een geldige recommendation bestaat"}
             </p>
           </div>
@@ -154,7 +176,7 @@ export default async function TodayPage() {
             <strong>Paperresultaat</strong>
             <p>
               {w.paper
-                ? `Laatste fictieve NAV ${Number(w.paper.nav).toLocaleString("nl-NL")}`
+                ? `Laatste fictieve NAV ${Number(w.paper.nav).toLocaleString("nl-NL", { maximumFractionDigits: 0 })}`
                 : "Nog geen dagelijkse paperwaardering"}
             </p>
           </div>
@@ -192,21 +214,18 @@ export default async function TodayPage() {
           <h2>Open technische aandachtspunten</h2>
           <span>{w.events.length}</span>
         </div>
-        {w.events.map(
-          (x: {
-            id: string;
-            severity: string;
-            event_type: string;
-            details: unknown;
-          }) => (
-            <article className="journal-entry" key={x.id}>
-              <strong>
-                {x.severity} · {x.event_type}
-              </strong>
-              <p>{JSON.stringify(x.details)}</p>
-            </article>
-          ),
+        {!w.events.length && (
+          <p className="muted">Geen openstaande data- of bronproblemen.</p>
         )}
+        {(w.events as QualityEvent[]).map((event) => (
+          <article className="journal-entry" key={event.id}>
+            <strong>
+              {label(event.severity)} · {label(event.event_type)}
+            </strong>
+            <p>{eventSummary(event) || "Geen aanvullende details"}</p>
+            <time>{new Date(event.created_at).toLocaleString("nl-NL")}</time>
+          </article>
+        ))}
       </section>
     </Shell>
   );

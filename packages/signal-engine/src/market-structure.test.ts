@@ -1,3 +1,25 @@
-import{describe,expect,it}from"vitest";import{deriveOiDrawdown,deriveOiMarketCapRatio}from"./market-structure";
-const point=(id:string,date:string,value:number)=>({id,observedAt:new Date(`${date}T00:00:00Z`),value});
-describe("market-structure derivations",()=>{it("normalizes OI by same-day market cap",()=>{expect(deriveOiMarketCapRatio([point("oi","2026-01-01",20)],[point("cap","2026-01-01",200)])[0]).toMatchObject({value:.1,inputObservationIds:["oi","cap"]});});it("tracks drawdown from the observed history high",()=>{expect(deriveOiDrawdown([point("a","2026-01-01",100),point("b","2026-01-02",80)]).at(-1)).toMatchObject({value:-20,inputObservationIds:["b","a"]});});});
+import { describe, expect, it } from "vitest";
+import { deriveOiDrawdown, deriveOiMarketCapRatio } from "./market-structure";
+const point = (id: string, date: string, value: number) => ({
+  id,
+  observedAt: new Date(`${date}T00:00:00Z`),
+  value,
+});
+describe("market-structure derivations", () => {
+  it("normalizes OI by same-day market cap", () => {
+    expect(
+      deriveOiMarketCapRatio(
+        [point("oi", "2026-01-01", 20)],
+        [point("cap", "2026-01-01", 200)],
+      )[0],
+    ).toMatchObject({ value: 0.1, inputObservationIds: ["oi", "cap"] });
+  });
+  it("tracks drawdown from the observed history high", () => {
+    expect(
+      deriveOiDrawdown([
+        point("a", "2026-01-01", 100),
+        point("b", "2026-01-02", 80),
+      ]).at(-1),
+    ).toMatchObject({ value: -20, inputObservationIds: ["b", "a"] });
+  });
+});

@@ -1,13 +1,18 @@
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   allocationWorkspace,
   appendAssetThesis,
   appendScenarioSet,
   signoffRecommendation,
+  SignoffError,
+  signoffProblemMessage,
+  type SignoffProblem,
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
 import { ScenarioPreview } from "./scenario-preview";
 import { GuidedJourney } from "../ui/guided-journey";
+import { label, warningLabel } from "../ui/labels";
 const num = (f: FormData, k: string) => Number(f.get(k));
 const actionLabels: Record<string, string> = {
   APPROVE: "Akkoord",
@@ -27,8 +32,14 @@ const stateLabels: Record<string, string> = {
   ELEVATED_RISK: "verhoogd risico",
   OVERHEATED: "oververhit",
 };
-export default async function AllocationPage() {
-  const w = await allocationWorkspace();
+export default async function AllocationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fout?: string | string[] }>;
+}) {
+  const [w, params] = await Promise.all([allocationWorkspace(), searchParams]);
+  // Only known codes map to a message; the URL never supplies display text.
+  const formError = signoffProblemMessage(params.fout);
   async function thesis(f: FormData) {
     "use server";
     await appendAssetThesis({
@@ -75,14 +86,25 @@ export default async function AllocationPage() {
           },
         ]),
     );
-    await signoffRecommendation({
-      recommendationId: String(f.get("recommendation_id")),
-      action: String(f.get("action")),
-      rationale: String(f.get("rationale")),
-      modifiedTargets: rawTargets || JSON.stringify(guidedTargets),
-      reviewOn: String(f.get("review_on") ?? ""),
-    });
+    let problem: SignoffProblem | null = null;
+    try {
+      await signoffRecommendation({
+        recommendationId: String(f.get("recommendation_id")),
+        action: String(f.get("action")),
+        rationale: String(f.get("rationale")),
+        modifiedTargets: rawTargets || JSON.stringify(guidedTargets),
+        reviewOn: String(f.get("review_on") ?? ""),
+      });
+    } catch (error) {
+      // Correctable input problems return to the form; anything else is a
+      // real failure for the error page.
+      if (!(error instanceof SignoffError)) throw error;
+      problem = error.code;
+    }
+    if (problem) redirect(`/allocation?fout=${problem}#human-review`);
     revalidatePath("/allocation");
+    // Clears a previous error from the address after a successful sign-off.
+    redirect("/allocation");
   }
   const r = w.recommendation,
     targets = (r?.target_ranges ?? {}) as Record<
@@ -280,6 +302,11 @@ export default async function AllocationPage() {
             action={signoff}
             className={`journal-form mandate-benchmarks ${latestSignoff ? "advanced-only" : ""}`}
           >
+            {formError && (
+              <p className="form-error" role="alert">
+                {formError}
+              </p>
+            )}
             <input
               type="hidden"
               name="recommendation_id"
@@ -346,6 +373,11 @@ export default async function AllocationPage() {
                 name="modified_targets"
                 placeholder='{"BTC":{"minimum":20,"maximum":30}}'
               />
+              <small className="muted">
+                Een gewijzigde band wordt uitgevoerd op het midden van de band.
+                Een band gelijk aan het voorstel telt niet als wijziging en
+                houdt het doelpunt van het model.
+              </small>
             </label>
             <label>
               Nieuwe reviewdatum
@@ -433,11 +465,11 @@ export default async function AllocationPage() {
       </section>
       {r && (
         <section
-          className={`trust-banner ${r.status === "AVAILABLE" ? "" : "stale"}`}
+          className={`trust-banner ${r.status === "AVAILABLE" && !warnings.length ? "current" : ""}`}
         >
-          <strong>{String(r.status)}</strong>
+          <strong>{label(String(r.status))}</strong>
           <span>
-            {((r.warnings ?? []) as string[]).join(" · ") ||
+            {warnings.map(warningLabel).join(" · ") ||
               "Geen actieve waarschuwingen"}
           </span>
         </section>

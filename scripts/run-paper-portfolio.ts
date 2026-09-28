@@ -1,70 +1,115 @@
-import { createClient } from "@supabase/supabase-js";
-const req = (n: string) => {
-    const v = process.env[n];
-    if (!v) throw new Error(`${n} missing`);
-    return v;
-  },
-  c = createClient(
-    req("NEXT_PUBLIC_SUPABASE_URL"),
-    req("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false } },
-  ),
-  at = new Date(process.env.CYCLE_CALCULATION_AT ?? Date.now()),
-  protocol = "cas-shadow-protocol-v1";
-async function quote(code: string) {
-  const { data } = await c
+import {
+  resolveExecutionTargets,
+  type ModifiedRanges,
+  type TargetRanges,
+} from "@cmip/domain";
+import {
+  PAPER_ASSETS,
+  PAPER_NAV_CALCULATION_VERSION,
+  DEFAULT_PAPER_COSTS,
+  advanceBenchmarks,
+  applyRecordedTrades,
+  benchmarkStateFromNavRow,
+  bookNav,
+  dailyCloses,
+  planPaperTrades,
+  trailingDailyAverage,
+  type PaperBook,
+  type PlannedTrade,
+} from "@cmip/signal-engine";
+import {
+  calculationTime,
+  fetchAllPages,
+  listAllUsers,
+  serviceClient,
+} from "./lib/runtime";
+
+const db = serviceClient();
+const at = calculationTime();
+const PROTOCOL = "cas-shadow-protocol-v1";
+const DAY_MS = 86_400_000;
+
+async function latestValid(code: string) {
+  const { data, error } = await db
     .from("canonical_observations")
-    .select("id,value,observed_at,indicators!inner(code)")
+    .select("id,value,indicators!inner(code)")
     .eq("indicators.code", code)
+    .eq("quality_status", "VALID")
     .lte("observed_at", at.toISOString())
     .order("observed_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data ? { id: data.id, value: Number(data.value) } : null;
+  if (error) throw error;
+  return data ? { id: data.id as string, value: Number(data.value) } : null;
 }
-async function movingAverage(code: string, days: number) {
-  const { data } = await c
-    .from("canonical_observations")
-    .select("value,observed_at,indicators!inner(code)")
-    .eq("indicators.code", code)
-    .lt("observed_at", at.toISOString())
-    .order("observed_at", { ascending: false })
-    .limit(days);
-  return data?.length === days
-    ? data.reduce((sum, row) => sum + Number(row.value), 0) / days
-    : null;
+
+/**
+ * benchmark-v1 signal: the prior complete UTC close against the 200-day
+ * average of complete daily closes (not of the last 200 observations).
+ */
+async function btc200DaySignal() {
+  const today = at.toISOString().slice(0, 10);
+  const since = new Date(at.getTime() - 230 * DAY_MS).toISOString();
+  const rows = await fetchAllPages((from, to) =>
+    db
+      .from("canonical_observations")
+      .select("id,value,observed_at,indicators!inner(code)")
+      .eq("indicators.code", "BTC_USD")
+      .eq("quality_status", "VALID")
+      .gte("observed_at", since)
+      .lt("observed_at", `${today}T00:00:00Z`)
+      .order("observed_at")
+      .order("id")
+      .range(from, to),
+  );
+  const closes = dailyCloses(
+    rows.map((row) => ({
+      observedAt: new Date(row.observed_at),
+      value: Number(row.value),
+    })),
+  );
+  return {
+    average: trailingDailyAverage(closes, 200),
+    priorClose: closes.at(-1)?.value ?? null,
+  };
 }
-const [b, e, fx, rate, btc200] = await Promise.all([
-  quote("BTC_USD"),
-  quote("ETH_USD"),
-  quote("EUR_USD"),
-  quote("US_3M_TBILL_YIELD"),
-  movingAverage("BTC_USD", 200),
+
+const [btc, eth, eurUsd, tbill, btc200] = await Promise.all([
+  latestValid("BTC_USD"),
+  latestValid("ETH_USD"),
+  latestValid("EUR_USD"),
+  latestValid("US_3M_TBILL_YIELD"),
+  btc200DaySignal(),
 ]);
-if (!b || !e) throw new Error("Paper prices unavailable");
-const { data: users } = await c.auth.admin.listUsers(),
-  out = [];
-for (const user of users.users) {
-  const { data: mandate } = await c
+if (!btc || !eth) throw new Error("Paper prices unavailable");
+
+const out = [];
+for (const user of await listAllUsers(db)) {
+  const { data: mandate, error: mandateError } = await db
     .from("investor_mandates")
-    .select("*")
+    .select("base_currency,minimum_cash_percent")
     .eq("user_id", user.id)
+    .lte("effective_at", at.toISOString())
     .order("effective_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (mandateError) throw mandateError;
   if (!mandate) continue;
-  let { data: paper } = await c
+
+  let { data: paper, error: paperError } = await db
     .from("paper_portfolios")
     .select("*")
     .eq("user_id", user.id)
-    .eq("protocol_version", protocol)
+    .eq("protocol_version", PROTOCOL)
     .maybeSingle();
+  if (paperError) throw paperError;
   if (!paper) {
-    const created = await c
+    const created = await db
       .from("paper_portfolios")
       .insert({
         user_id: user.id,
-        protocol_version: protocol,
+        protocol_version: PROTOCOL,
         base_currency: mandate.base_currency,
         started_at: at.toISOString(),
         status: "ACTIVE",
@@ -75,215 +120,196 @@ for (const user of users.users) {
     if (created.error) throw created.error;
     paper = created.data;
   }
-  const conversion =
-    paper.base_currency === "EUR" ? (fx ? 1 / fx.value : 0) : 1;
-  if (!conversion) {
-    out.push({ user: user.id, status: "BLOCKED", reason: "FX_MISSING" });
-    continue;
-  }
-  const prices = { BTC: b.value * conversion, ETH: e.value * conversion },
-    { data: previous } = await c
-      .from("paper_nav")
-      .select("*")
-      .eq("paper_portfolio_id", paper.id)
-      .order("calculated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-  let positions = previous
-      ? (previous.positions as Record<string, number>)
-      : { BTC: 0, ETH: 0 },
-    cash = previous ? Number(previous.cash) : Number(paper.initial_capital),
-    nav = cash + positions.BTC * prices.BTC + positions.ETH * prices.ETH;
-  const { data: recommendation } = await c
-    .from("allocation_recommendations")
+
+  const { data: previous, error: previousError } = await db
+    .from("paper_nav")
     .select("*")
-    .eq("user_id", user.id)
-    .eq("status", "AVAILABLE")
+    .eq("paper_portfolio_id", paper.id)
     .lte("calculated_at", at.toISOString())
     .order("calculated_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  let executed = false;
-  if (recommendation) {
-    // The most recent human decision is authoritative. Never fall back to an
-    // older approval after a later REJECT or DEFER.
-    const { data: approval } = await c
-      .from("analyst_signoffs")
-      .select("id,action,modified_targets,created_at")
-      .eq("recommendation_id", recommendation.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (approval && ["APPROVE", "MODIFY"].includes(approval.action)) {
-      const { data: existingTrades, error: existingTradesError } = await c
-        .from("paper_trades")
-        .select("asset")
-        .eq("paper_portfolio_id", paper.id)
-        .eq("recommendation_id", recommendation.id);
-      if (existingTradesError) throw existingTradesError;
-      const alreadyExecuted = new Set(
-        (existingTrades ?? []).map((trade) => String(trade.asset)),
-      );
-      const original = recommendation.target_ranges as Record<
-          string,
-          { minimum: number; maximum: number; midpoint: number }
-        >,
-        modified = (approval.modified_targets ?? {}) as Record<
-          string,
-          { minimum: number; maximum: number; midpoint?: number }
-        >,
-        targets = Object.fromEntries(
-          Object.entries(original).map(([asset, target]) => {
-            const change = modified[asset];
-            return [
-              asset,
-              change
-                ? {
-                    ...change,
-                    midpoint:
-                      change.midpoint ??
-                      (Number(change.minimum) + Number(change.maximum)) / 2,
-                  }
-                : target,
-            ];
-          }),
-        ) as Record<string, { midpoint: number }>;
-      const planned = (["BTC", "ETH"] as const)
-        .filter((asset) => !alreadyExecuted.has(asset))
-        .map((asset) => {
-          const current = positions[asset] * prices[asset];
-          return {
-            asset,
-            delta: (nav * (targets[asset]?.midpoint ?? 0)) / 100 - current,
-          };
-        })
-        // Sales fund purchases; deterministic secondary order keeps reruns
-        // reproducible when both deltas have the same sign.
-        .sort((a, b) => a.delta - b.delta || a.asset.localeCompare(b.asset));
-      for (const plan of planned) {
-        const { asset } = plan;
-        // A recommendation is applied once per asset. This check occurs before
-        // any in-memory balance mutation, keeping reruns idempotent.
-        let delta = plan.delta;
-        if (Math.abs(delta) < nav * 0.01) continue;
-        if (delta > 0) {
-          const targetCash = (nav * Number(targets.CASH?.midpoint ?? 0)) / 100,
-            availableForTrade = Math.max(0, cash - targetCash),
-            maximumPurchase = availableForTrade / 1.0015;
-          delta = Math.min(delta, maximumPurchase);
-          if (delta < nav * 0.01) continue;
-        }
-        const fee = Math.abs(delta) * 0.001,
-          slippage = Math.abs(delta) * 0.0005,
-          quantity = Math.abs(delta) / prices[asset];
-        positions = {
-          ...positions,
-          [asset]: positions[asset] + Math.sign(delta) * quantity,
-        };
-        cash -= delta + fee + slippage;
-        const { error } = await c.from("paper_trades").upsert(
-          {
-            paper_portfolio_id: paper.id,
-            recommendation_id: recommendation.id,
-            asset,
-            side: delta > 0 ? "INCREASE" : "DECREASE",
-            quantity,
-            price: prices[asset],
-            fee,
-            slippage,
-            executed_at: at.toISOString(),
-            execution_rule:
-              approval.action === "MODIFY"
-                ? "HUMAN_MODIFIED_RANGE_MIDPOINT"
-                : "APPROVED_TARGET_RANGE_MIDPOINT",
-          },
-          {
-            onConflict: "paper_portfolio_id,recommendation_id,asset",
-            ignoreDuplicates: true,
-          },
-        );
-        if (error) throw error;
-        executed = true;
-      }
-    }
+  if (previousError) throw previousError;
+  // One valuation per calculation time, whatever version wrote it.
+  if (previous && new Date(previous.calculated_at).getTime() === at.getTime()) {
+    out.push({ user: user.id, status: "ALREADY_VALUED" });
+    continue;
   }
-  nav = cash + positions.BTC * prices.BTC + positions.ETH * prices.ETH;
-  const firstAttribution = previous
-      ? (previous.attribution as Record<string, unknown>)
-      : {
-          anchors: {
-            BTC: prices.BTC,
-            ETH: prices.ETH,
-            capital: Number(paper.initial_capital),
-          },
+
+  // EUR_USD is quoted as USD per EUR.
+  const conversion =
+    paper.base_currency === "EUR" ? (eurUsd ? 1 / eurUsd.value : 0) : 1;
+  if (!conversion) {
+    out.push({ user: user.id, status: "BLOCKED", reason: "FX_MISSING" });
+    continue;
+  }
+  const prices = { BTC: btc.value * conversion, ETH: eth.value * conversion };
+  const storedPositions = (previous?.positions ?? {}) as Record<
+    string,
+    unknown
+  >;
+  let book: PaperBook = {
+    cash: previous ? Number(previous.cash) : Number(paper.initial_capital),
+    positions: {
+      BTC: Number(storedPositions.BTC ?? 0),
+      ETH: Number(storedPositions.ETH ?? 0),
+    },
+  };
+
+  // A freeze on the newest recommendation blocks new exposure; reducing risk
+  // remains possible.
+  const { data: newest, error: newestError } = await db
+    .from("allocation_recommendations")
+    .select("id,status")
+    .eq("user_id", user.id)
+    .lte("calculated_at", at.toISOString())
+    .order("calculated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (newestError) throw newestError;
+  const allowIncreases = newest?.status === "AVAILABLE";
+
+  // The most recent human decision is authoritative, even when the daily
+  // cycle has since produced a newer, not yet reviewed recommendation. An
+  // older approval never executes after a later REJECT or DEFER.
+  const { data: signoff, error: signoffError } = await db
+    .from("analyst_signoffs")
+    .select(
+      "id,action,created_at,modified_targets,allocation_recommendations!inner(id,status,target_ranges,user_id)",
+    )
+    .eq("user_id", user.id)
+    .eq("allocation_recommendations.user_id", user.id)
+    .lte("created_at", at.toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (signoffError) throw signoffError;
+  const approved = signoff?.allocation_recommendations as unknown as {
+    id: string;
+    status: string;
+    target_ranges: TargetRanges;
+  } | null;
+  // Each decision is processed exactly once: at the first valuation after it
+  // was made. Anything skipped then (e.g. blocked by a freeze) needs a new
+  // decision rather than executing later at other prices.
+  const unprocessed =
+    signoff !== null &&
+    (!previous ||
+      new Date(signoff.created_at) > new Date(previous.calculated_at));
+
+  let tradeCount = 0;
+  let skipped: Array<{ asset: string; reason: string }> = [];
+  if (
+    unprocessed &&
+    approved?.status === "AVAILABLE" &&
+    (signoff.action === "APPROVE" || signoff.action === "MODIFY")
+  ) {
+    const { data: recorded, error: recordedError } = await db
+      .from("paper_trades")
+      .select("asset,side,quantity,price,fee,slippage,executed_at")
+      .eq("paper_portfolio_id", paper.id)
+      .eq("recommendation_id", approved.id);
+    if (recordedError) throw recordedError;
+    // Trades recorded after the previous valuation are not in its book yet:
+    // a rerun after an interrupted run re-applies them instead of dropping
+    // them from the NAV.
+    const valuedUntil = previous
+      ? new Date(previous.calculated_at).getTime()
+      : -Infinity;
+    const recordedNow = (recorded ?? [])
+      .filter((x) => {
+        const executedAt = new Date(x.executed_at).getTime();
+        return executedAt > valuedUntil && executedAt <= at.getTime();
+      })
+      .map((x) => ({
+        asset: x.asset as (typeof PAPER_ASSETS)[number],
+        side: x.side as PlannedTrade["side"],
+        quantity: Number(x.quantity),
+        price: Number(x.price),
+        fee: Number(x.fee),
+        slippage: Number(x.slippage),
+      }));
+    // A rerun after an interrupted run keeps the trades it already recorded.
+    book = applyRecordedTrades(book, recordedNow);
+    const plan = planPaperTrades({
+      book,
+      prices,
+      targets: resolveExecutionTargets(
+        approved.target_ranges,
+        signoff.action === "MODIFY"
+          ? (signoff.modified_targets as ModifiedRanges | null)
+          : null,
+        Number(mandate.minimum_cash_percent),
+      ),
+      alreadyExecuted: new Set((recorded ?? []).map((x) => String(x.asset))),
+      allowIncreases,
+    });
+    for (const trade of plan.trades) {
+      const { error } = await db.from("paper_trades").upsert(
+        {
+          paper_portfolio_id: paper.id,
+          recommendation_id: approved.id,
+          asset: trade.asset,
+          side: trade.side,
+          quantity: trade.quantity,
+          price: trade.price,
+          fee: trade.fee,
+          slippage: trade.slippage,
+          executed_at: at.toISOString(),
+          execution_rule:
+            signoff.action === "MODIFY"
+              ? "HUMAN_MODIFIED_RANGE_MIDPOINT"
+              : "APPROVED_TARGET_RANGE_MIDPOINT",
         },
-    anchors = (firstAttribution.anchors ?? {
-      BTC: prices.BTC,
-      ETH: prices.ETH,
-      capital: Number(paper.initial_capital),
-    }) as Record<string, number>,
-    cashDaily = rate
-      ? Number(paper.initial_capital) *
-        0.5 *
-        (Number(rate.value) / 100 / 365) *
-        ((at.getTime() - new Date(paper.started_at).getTime()) / 864e5)
-      : null,
-    priorBenchmarks = (previous?.benchmark_nav ?? {}) as Record<
-      string,
-      number | null
-    >,
-    priorBtc = Number(
-      (previous?.attribution as Record<string, unknown> | null)?.lastBtcPrice ??
-        anchors.BTC,
-    ),
-    dmaWasRiskOn = Boolean(
-      (previous?.attribution as Record<string, unknown> | null)?.btc200RiskOn ??
-      false,
-    ),
-    priorDmaNav = Number(priorBenchmarks.BTC_200DMA ?? anchors.capital),
-    dailyCashReturn = rate ? Number(rate.value) / 100 / 365 : 0,
-    btcDailyReturn = priorBtc > 0 ? prices.BTC / priorBtc - 1 : 0,
-    benchmarks = {
-      BTC_HOLD: (anchors.capital * prices.BTC) / anchors.BTC,
-      BTC_ETH_60_40:
-        anchors.capital *
-        ((0.6 * prices.BTC) / anchors.BTC + (0.4 * prices.ETH) / anchors.ETH),
-      BTC_CASH_50_50:
-        cashDaily === null
-          ? null
-          : (anchors.capital * 0.5 * prices.BTC) / anchors.BTC +
-            anchors.capital * 0.5 +
-            cashDaily,
-      BTC_200DMA:
-        btc200 === null
-          ? null
-          : priorDmaNav *
-            (1 + (dmaWasRiskOn ? btcDailyReturn : dailyCashReturn)),
-    };
-  const { error } = await c.from("paper_nav").upsert(
+        {
+          onConflict: "paper_portfolio_id,recommendation_id,asset",
+          ignoreDuplicates: true,
+        },
+      );
+      if (error) throw error;
+    }
+    book = plan.book;
+    tradeCount = recordedNow.length + plan.trades.length;
+    skipped = plan.skipped;
+  }
+
+  const benchmarks = advanceBenchmarks({
+    previous: previous ? benchmarkStateFromNavRow(previous) : null,
+    initialCapital: Number(paper.initial_capital),
+    prices,
+    valuedAt: at,
+    annualCashRatePercent: tbill ? tbill.value : null,
+    btc200DayAverage: btc200.average,
+    btcPriceForSignal: btc200.priorClose ?? btc.value,
+  });
+  const nav = bookNav(book, prices);
+  const { error } = await db.from("paper_nav").upsert(
     {
       paper_portfolio_id: paper.id,
       calculated_at: at.toISOString(),
       nav,
-      positions,
-      cash,
-      benchmark_nav: benchmarks,
+      positions: book.positions,
+      cash: book.cash,
+      benchmark_nav: benchmarks.navs,
       attribution: {
-        anchors,
-        executed,
-        feesModelBps: 10,
-        slippageModelBps: 5,
-        lastBtcPrice: prices.BTC,
-        btc200: btc200 === null ? null : btc200 * conversion,
-        btc200RiskOn: btc200 !== null && b.value > btc200,
+        benchmarkState: benchmarks.state,
+        processedSignoffId: unprocessed ? signoff.id : null,
+        executed: tradeCount > 0,
+        trades: tradeCount,
+        skipped,
+        increasesAllowed: allowIncreases,
+        feesModelBps: DEFAULT_PAPER_COSTS.feeRate * 10_000,
+        slippageModelBps: DEFAULT_PAPER_COSTS.slippageRate * 10_000,
+        btc200: btc200.average === null ? null : btc200.average * conversion,
+        btc200RiskOn: benchmarks.state.dma.riskOn,
       },
       price_observation_ids: [
-        b.id,
-        e.id,
-        ...(fx ? [fx.id] : []),
-        ...(rate ? [rate.id] : []),
+        btc.id,
+        eth.id,
+        ...(eurUsd ? [eurUsd.id] : []),
+        ...(tbill ? [tbill.id] : []),
       ],
-      calculation_version: "paper-nav-v1",
+      calculation_version: PAPER_NAV_CALCULATION_VERSION,
     },
     {
       onConflict: "paper_portfolio_id,calculated_at,calculation_version",
@@ -291,11 +317,22 @@ for (const user of users.users) {
     },
   );
   if (error) throw error;
-  out.push({ user: user.id, status: "VALUED", nav, executed });
+  out.push({
+    user: user.id,
+    status: "VALUED",
+    nav,
+    trades: tradeCount,
+    skipped,
+    increasesAllowed: allowIncreases,
+  });
 }
 console.log(
   JSON.stringify(
-    { calculatedAt: at.toISOString(), paperPortfolios: out },
+    {
+      calculatedAt: at.toISOString(),
+      assets: PAPER_ASSETS,
+      paperPortfolios: out,
+    },
     null,
     2,
   ),

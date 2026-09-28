@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@cmip/database": "0.1.0",
     "@cmip/domain": "0.1.0",
     "@next/env": "^16.0.0",
     "@supabase/ssr": "^0.7.0",

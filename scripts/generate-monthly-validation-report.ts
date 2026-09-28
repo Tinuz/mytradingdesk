@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { RECOMMENDATION_OUTCOME_VERSION } from "@cmip/domain";
+import { listAllUsers } from "./lib/runtime";
 const req = (n: string) => {
     const v = process.env[n];
     if (!v) throw new Error(`${n} missing`);
@@ -14,9 +16,8 @@ const req = (n: string) => {
   end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)),
   month = start.toISOString().slice(0, 10),
   protocol = "cas-shadow-protocol-v1",
-  { data: users } = await db.auth.admin.listUsers(),
   output = [];
-for (const user of users.users) {
+for (const user of await listAllUsers(db)) {
   const [
     { data: cycles },
     { data: recommendations },
@@ -59,6 +60,8 @@ for (const user of users.users) {
         "portfolio_return_percent,benchmark_return_percent,adverse_excursion_percent,allocation_recommendations!inner(user_id)",
       )
       .eq("allocation_recommendations.user_id", user.id)
+      .eq("calculation_version", RECOMMENDATION_OUTCOME_VERSION)
+      .eq("outcome_status", "OBSERVED")
       .gte("observed_at", start.toISOString())
       .lt("observed_at", end.toISOString()),
   ]);

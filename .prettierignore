@@ -1,0 +1,7 @@
+package-lock.json
+apps/web/.next
+coverage
+playwright-report
+test-results
+supabase/.temp
+apps/web/next-env.d.ts

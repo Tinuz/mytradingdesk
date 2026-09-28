@@ -2,7 +2,6 @@ import { DATA_CONTRACTS } from "./contracts";
 import { detectMissingIntervals } from "./gaps";
 import { reconcile } from "./reconciliation";
 import type {
-  CanonicalObservation,
   DataQualityEvent,
   HistoricalDataProvider,
   IngestionRepository,

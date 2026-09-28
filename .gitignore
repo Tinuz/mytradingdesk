@@ -3,13 +3,13 @@ node_modules/
 coverage/
 playwright-report/
 test-results/
-.env
-.env.local
-!.env.example
 .DS_Store
 *.tsbuildinfo
 .supabase/
 supabase/.temp/
-
+supabase/.branches/
 .vercel
+
+# Secrets. The negation must come after `.env*` or the example is ignored too.
 .env*
+!.env.example

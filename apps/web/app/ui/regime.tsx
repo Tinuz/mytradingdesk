@@ -2,9 +2,135 @@ import Link from "next/link";
 import type { DecisionView, FactorBreakdown } from "../../lib/data";
 import { Arrow } from "./icons";
 
-export const pretty=(value:string|null|undefined)=>value?value.replaceAll("_"," ").toLowerCase().replace(/^./,letter=>letter.toUpperCase()):"Onbekend";
-export const tone=(value:number|null|undefined)=>value==null?"unknown":value>0?"positive":value<0?"negative":"neutral";
-export const score=(value:number|null|undefined)=>value==null?"—":value>0?`+${value}`:`${value}`;
-export function RegimeStrip({label,state,value,eyebrow}:{label:string;state:string;value:number;eyebrow?:string}){return <div className={`regime-strip ${tone(value)}`}><div><span className="micro-label">{eyebrow??label}</span><h3>{label}</h3></div><div className="regime-value"><strong>{pretty(state)}</strong><span>{score(value)}</span></div></div>}
-export function AssetCard({item}:{item:DecisionView}){return <Link href={`/assets/${item.symbol.toLowerCase()}`} className="asset-card"><div className="asset-title"><div className={`coin ${item.symbol.toLowerCase()}`}>{item.symbol==="BTC"?"₿":"Ξ"}</div><div><span>{item.asset_name}</span><strong>{item.symbol}</strong></div><Arrow/></div><div className={`decision ${tone(item.asset_score)}`}><span>Decision state</span><strong>{pretty(item.decision_state)}</strong>{item.risk_override!=="NONE"?<small className="override-note">{pretty(item.risk_override)}</small>:null}</div><div className="quadruplet"><span><small>Macro</small>{score(item.macro_score)}</span><span><small>Credit</small>{score(item.crypto_score)}</span><span><small>Risk</small>{score(item.market_structure_score)}</span><span><small>Asset</small>{score(item.asset_score)}</span></div><div className="card-foot"><span className={`confidence ${item.confidence_level.toLowerCase()}`}>{item.confidence_level} confidence</span><time>{new Intl.DateTimeFormat("nl-NL",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(item.calculated_at))}</time></div></Link>}
-export function FactorTable({breakdown}:{breakdown:FactorBreakdown}){return <div className="factor-table"><div className="factor-head"><span>Factor</span><span>Familie / rol</span><span>Status</span><span>Score</span></div>{breakdown.factors.map(factor=><div className="factor-row" key={factor.code}><span><strong>{factor.code.replaceAll("_"," ")}</strong><small>{factor.description}</small></span><span>{pretty(factor.family)}{factor.classification?<small>{pretty(factor.classification)} · {pretty(factor.classificationStatus)}</small>:null}</span><span className={factor.status==="VALID"?"fresh-text":"warning-text"}>{pretty(factor.status)}</span><span className={tone(factor.score)}>{score(factor.score)}</span></div>)}</div>}
+export const pretty = (value: string | null | undefined) =>
+  value
+    ? value
+        .replaceAll("_", " ")
+        .toLowerCase()
+        .replace(/^./, (letter) => letter.toUpperCase())
+    : "Onbekend";
+export const tone = (value: number | null | undefined) =>
+  value == null
+    ? "unknown"
+    : value > 0
+      ? "positive"
+      : value < 0
+        ? "negative"
+        : "neutral";
+export const score = (value: number | null | undefined) =>
+  value == null ? "—" : value > 0 ? `+${value}` : `${value}`;
+export function RegimeStrip({
+  label,
+  state,
+  value,
+  eyebrow,
+}: {
+  label: string;
+  state: string;
+  value: number;
+  eyebrow?: string;
+}) {
+  return (
+    <div className={`regime-strip ${tone(value)}`}>
+      <div>
+        <span className="micro-label">{eyebrow ?? label}</span>
+        <h3>{label}</h3>
+      </div>
+      <div className="regime-value">
+        <strong>{pretty(state)}</strong>
+        <span>{score(value)}</span>
+      </div>
+    </div>
+  );
+}
+export function AssetCard({ item }: { item: DecisionView }) {
+  return (
+    <Link href={`/assets/${item.symbol.toLowerCase()}`} className="asset-card">
+      <div className="asset-title">
+        <div className={`coin ${item.symbol.toLowerCase()}`}>
+          {item.symbol === "BTC" ? "₿" : "Ξ"}
+        </div>
+        <div>
+          <span>{item.asset_name}</span>
+          <strong>{item.symbol}</strong>
+        </div>
+        <Arrow />
+      </div>
+      <div className={`decision ${tone(item.asset_score)}`}>
+        <span>Decision state</span>
+        <strong>{pretty(item.decision_state)}</strong>
+        {item.risk_override !== "NONE" ? (
+          <small className="override-note">{pretty(item.risk_override)}</small>
+        ) : null}
+      </div>
+      <div className="quadruplet">
+        <span>
+          <small>Macro</small>
+          {score(item.macro_score)}
+        </span>
+        <span>
+          <small>Credit</small>
+          {score(item.crypto_score)}
+        </span>
+        <span>
+          <small>Risk</small>
+          {score(item.market_structure_score)}
+        </span>
+        <span>
+          <small>Asset</small>
+          {score(item.asset_score)}
+        </span>
+      </div>
+      <div className="card-foot">
+        <span className={`confidence ${item.confidence_level.toLowerCase()}`}>
+          {item.confidence_level} confidence
+        </span>
+        <time>
+          {new Intl.DateTimeFormat("nl-NL", {
+            day: "2-digit",
+            month: "short",
+            hour: "2-digit",
+            minute: "2-digit",
+          }).format(new Date(item.calculated_at))}
+        </time>
+      </div>
+    </Link>
+  );
+}
+export function FactorTable({ breakdown }: { breakdown: FactorBreakdown }) {
+  return (
+    <div className="factor-table">
+      <div className="factor-head">
+        <span>Factor</span>
+        <span>Familie / rol</span>
+        <span>Status</span>
+        <span>Score</span>
+      </div>
+      {breakdown.factors.map((factor) => (
+        <div className="factor-row" key={factor.code}>
+          <span>
+            <strong>{factor.code.replaceAll("_", " ")}</strong>
+            <small>{factor.description}</small>
+          </span>
+          <span>
+            {pretty(factor.family)}
+            {factor.classification ? (
+              <small>
+                {pretty(factor.classification)} ·{" "}
+                {pretty(factor.classificationStatus)}
+              </small>
+            ) : null}
+          </span>
+          <span
+            className={
+              factor.status === "VALID" ? "fresh-text" : "warning-text"
+            }
+          >
+            {pretty(factor.status)}
+          </span>
+          <span className={tone(factor.score)}>{score(factor.score)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}

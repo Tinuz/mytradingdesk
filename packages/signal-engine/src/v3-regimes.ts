@@ -453,8 +453,13 @@ function assetRegime(symbol: "BTC" | "ETH", input: V3RegimeInput) {
     old50 = ma(50, 20);
   const distance = now && ma200 ? ((now.value - ma200) / ma200) * 100 : null;
   const slope = ma50 && old50 ? ((ma50 - old50) / old50) * 100 : null;
-  const high = rows.length
-    ? Math.max(...rows.slice(-365).map((x) => x.value))
+  // One-year high over the daily closes of the last 365 calendar days:
+  // counting observations would shrink the window to weeks once intraday
+  // data accumulates, and counting closes would stretch it across gaps.
+  const yearAgo = input.asOf.getTime() - 365 * 86_400_000;
+  const lastYear = daily.filter((x) => x.observedAt.getTime() >= yearAgo);
+  const high = lastYear.length
+    ? Math.max(...lastYear.map((x) => x.value))
     : null;
   const draw = now && high ? ((now.value - high) / high) * 100 : null;
   const factors: V3Factor[] = [
@@ -479,7 +484,13 @@ function assetRegime(symbol: "BTC" | "ETH", input: V3RegimeInput) {
       "ASSET_TREND",
       "RISK",
       draw,
-      draw === null ? null : draw <= -40 ? -2 : draw <= -20 ? -1 : 0,
+      draw === null
+        ? null
+        : draw <= C.thresholds.asset.drawdownStrongNegative
+          ? -2
+          : draw <= C.thresholds.asset.drawdownNegative
+            ? -1
+            : 0,
       "Drawdown from one-year high",
     ),
   ];
