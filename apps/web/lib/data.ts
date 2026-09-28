@@ -1195,7 +1195,25 @@ export async function appendScenarioSet(input: {
   if (error) throw error;
 }
 /** A sign-off the user can correct; its message is safe to show. */
-export class SignoffError extends Error {}
+/** Fixed messages for sign-off problems the user can correct. */
+export const SIGNOFF_PROBLEMS = {
+  "invalid-input":
+    "Kies een actie en licht je keuze toe in minstens 10 tekens.",
+  "not-found": "Deze aanbeveling bestaat niet (meer).",
+  "not-available":
+    "Alleen een beschikbare aanbeveling kan worden goedgekeurd of aangepast.",
+  "invalid-json": "Aanpassen vereist geldige bandbreedtes.",
+  "no-changes": "Pas minstens één bandbreedte aan, of kies Akkoord.",
+  "cash-floor": "De aangepaste bandbreedtes laten te weinig cash over.",
+  mandate: "De aangepaste bandbreedtes passen niet binnen je mandaat.",
+} as const;
+export type SignoffProblem = keyof typeof SIGNOFF_PROBLEMS;
+/** A sign-off the user can correct; carries a code, never free text. */
+export class SignoffError extends Error {
+  constructor(readonly code: SignoffProblem) {
+    super(SIGNOFF_PROBLEMS[code]);
+  }
+}
 export async function signoffRecommendation(input: {
   recommendationId: string;
   action: string;
@@ -1207,7 +1225,7 @@ export async function signoffRecommendation(input: {
     user = await ownedUser(client),
     actions = new Set(["APPROVE", "MODIFY", "REJECT", "DEFER"]);
   if (!actions.has(input.action) || input.rationale.trim().length < 10)
-    throw new SignoffError("Ongeldige sign-off");
+    throw new SignoffError("invalid-input");
   const { data: r } = await client!
     .from("allocation_recommendations")
     .select(
@@ -1216,25 +1234,23 @@ export async function signoffRecommendation(input: {
     .eq("id", input.recommendationId)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!r) throw new SignoffError("Aanbeveling niet gevonden");
+  if (!r) throw new SignoffError("not-found");
   // A frozen or infeasible recommendation has nothing to execute.
   if (
     (input.action === "APPROVE" || input.action === "MODIFY") &&
     r.status !== "AVAILABLE"
   )
-    throw new SignoffError(
-      "Alleen een beschikbare aanbeveling kan worden goedgekeurd of aangepast",
-    );
+    throw new SignoffError("not-available");
   let modifiedTargets: ModifiedRanges | null = null;
   if (input.action === "MODIFY") {
     let parsed: unknown;
     try {
       parsed = JSON.parse(input.modifiedTargets ?? "");
     } catch {
-      throw new SignoffError("MODIFY vereist geldige target-JSON");
+      throw new SignoffError("invalid-json");
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      throw new SignoffError("MODIFY vereist geldige target-JSON");
+      throw new SignoffError("invalid-json");
     const proposed = (r.target_ranges ?? {}) as TargetRanges;
     // Store only the fields execution reads (a supplied midpoint is ignored)
     // and only ranges that differ from the proposal: an untouched asset keeps
@@ -1271,14 +1287,9 @@ export async function signoffRecommendation(input: {
         allowedAssets: mandate.allowed_assets,
       },
     );
-    if (violations.includes("NO_CHANGES"))
-      throw new SignoffError(
-        "Pas minstens één bandbreedte aan of kies Akkoord",
-      );
-    if (violations.includes("CASH_FLOOR"))
-      throw new SignoffError("Gewijzigde ranges overtreden de cashvloer");
-    if (violations.length)
-      throw new SignoffError("Gewijzigde ranges overtreden het mandaat");
+    if (violations.includes("NO_CHANGES")) throw new SignoffError("no-changes");
+    if (violations.includes("CASH_FLOOR")) throw new SignoffError("cash-floor");
+    if (violations.length) throw new SignoffError("mandate");
   }
   const { error } = await client!.from("analyst_signoffs").insert({
     user_id: user.id,

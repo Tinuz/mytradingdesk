@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { axisDigits } from "./axis";
+import { returnAxis } from "./axis";
 
 type NavRow = {
   calculated_at: string;
@@ -74,7 +74,7 @@ export function PaperChart({
     ),
   })) as Array<Record<string, string | number | null>>;
   const latest = data.at(-1)!;
-  const digits = axisDigits(
+  const axis = returnAxis(
     data.flatMap((row) =>
       SERIES.map((s) => row[s.key]).filter(
         (value): value is number => typeof value === "number",
@@ -97,11 +97,13 @@ export function PaperChart({
             minTickGap={24}
           />
           <YAxis
-            tickFormatter={(value: number) => percent(value, digits)}
+            tickFormatter={(value: number) => percent(value, axis.digits)}
             stroke="#52606c"
             tick={{ fill: "#8e9ba6", fontSize: 12 }}
             width={64}
-            domain={["auto", "auto"]}
+            domain={axis.domain}
+            ticks={axis.ticks}
+            allowDataOverflow={false}
           />
           <ReferenceLine y={0} stroke="#52606c" strokeDasharray="4 4" />
           <Tooltip

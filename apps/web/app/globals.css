@@ -1001,7 +1001,7 @@ html[data-view-mode="guided"] .advanced-only {
   }
   /* Stay sticky only while compact; with the advanced links open the header
      would cover a third of a phone screen while scrolling. */
-  .sidebar:has(.advanced-nav[open]) {
+  html[data-view-mode="advanced"] .sidebar:has(.advanced-nav[open]) {
     position: static;
   }
   .sidebar .primary-nav {

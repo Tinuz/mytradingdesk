@@ -5,7 +5,9 @@ import {
   appendAssetThesis,
   appendScenarioSet,
   signoffRecommendation,
+  SIGNOFF_PROBLEMS,
   SignoffError,
+  type SignoffProblem,
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
 import { ScenarioPreview } from "./scenario-preview";
@@ -36,7 +38,11 @@ export default async function AllocationPage({
   searchParams: Promise<{ fout?: string | string[] }>;
 }) {
   const [w, params] = await Promise.all([allocationWorkspace(), searchParams]);
-  const formError = typeof params.fout === "string" ? params.fout : null;
+  // Only known codes map to a message; the URL never supplies display text.
+  const formError =
+    typeof params.fout === "string" && params.fout in SIGNOFF_PROBLEMS
+      ? SIGNOFF_PROBLEMS[params.fout as SignoffProblem]
+      : null;
   async function thesis(f: FormData) {
     "use server";
     await appendAssetThesis({
@@ -83,7 +89,7 @@ export default async function AllocationPage({
           },
         ]),
     );
-    let problem: string | null = null;
+    let problem: SignoffProblem | null = null;
     try {
       await signoffRecommendation({
         recommendationId: String(f.get("recommendation_id")),
@@ -96,10 +102,9 @@ export default async function AllocationPage({
       // Correctable input problems return to the form; anything else is a
       // real failure for the error page.
       if (!(error instanceof SignoffError)) throw error;
-      problem = error.message;
+      problem = error.code;
     }
-    if (problem)
-      redirect(`/allocation?fout=${encodeURIComponent(problem)}#human-review`);
+    if (problem) redirect(`/allocation?fout=${problem}#human-review`);
     revalidatePath("/allocation");
     // Clears a previous error from the address after a successful sign-off.
     redirect("/allocation");
@@ -371,6 +376,11 @@ export default async function AllocationPage({
                 name="modified_targets"
                 placeholder='{"BTC":{"minimum":20,"maximum":30}}'
               />
+              <small className="muted">
+                Een gewijzigde band wordt uitgevoerd op het midden van de band.
+                Een band gelijk aan het voorstel telt niet als wijziging en
+                houdt het doelpunt van het model.
+              </small>
             </label>
             <label>
               Nieuwe reviewdatum
