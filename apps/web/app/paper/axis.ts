@@ -14,7 +14,8 @@ export function returnAxis(values: readonly number[], targetTicks = 5) {
   const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
   const round = (value: number) => Number(value.toFixed(digits + 2));
   const first = Math.floor(min / step + 1e-9);
-  const last = Math.ceil(max / step - 1e-9);
+  // Flat data (e.g. two identical valuations) still gets a two-tick axis.
+  const last = Math.max(first + 1, Math.ceil(max / step - 1e-9));
   const ticks: number[] = [];
   for (let i = first; i <= last; i++) ticks.push(round(i * step));
   return {

@@ -5,8 +5,8 @@ import {
   appendAssetThesis,
   appendScenarioSet,
   signoffRecommendation,
-  SIGNOFF_PROBLEMS,
   SignoffError,
+  signoffProblemMessage,
   type SignoffProblem,
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
@@ -39,10 +39,7 @@ export default async function AllocationPage({
 }) {
   const [w, params] = await Promise.all([allocationWorkspace(), searchParams]);
   // Only known codes map to a message; the URL never supplies display text.
-  const formError =
-    typeof params.fout === "string" && params.fout in SIGNOFF_PROBLEMS
-      ? SIGNOFF_PROBLEMS[params.fout as SignoffProblem]
-      : null;
+  const formError = signoffProblemMessage(params.fout);
   async function thesis(f: FormData) {
     "use server";
     await appendAssetThesis({

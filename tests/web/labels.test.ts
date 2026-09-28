@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { returnAxis } from "../../apps/web/app/paper/axis";
 import { label, warningLabel } from "../../apps/web/app/ui/labels";
+import { signoffProblemMessage } from "../../apps/web/lib/signoff-problems";
 
 describe("display labels", () => {
   it("translates stored codes regardless of case", () => {
@@ -51,5 +52,27 @@ describe("results chart axis", () => {
     });
     expect(returnAxis([-2.2, 0.7]).digits).toBe(0);
     expect(returnAxis([0.01, 0.03]).digits).toBe(2);
+  });
+});
+
+describe("sign-off problem codes", () => {
+  it("maps only defined codes to messages", () => {
+    expect(signoffProblemMessage("no-changes")).toMatch(/bandbreedte/);
+    for (const code of [
+      "toString",
+      "constructor",
+      "__proto__",
+      "hasOwnProperty",
+      "Bel 0800-123",
+      undefined,
+      ["no-changes"],
+    ])
+      expect(signoffProblemMessage(code)).toBeNull();
+  });
+});
+
+describe("flat result axis", () => {
+  it("keeps two ticks when every value is zero", () => {
+    expect(returnAxis([0, 0]).ticks.length).toBeGreaterThanOrEqual(2);
   });
 });

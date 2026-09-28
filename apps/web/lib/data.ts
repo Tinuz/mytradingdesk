@@ -2,6 +2,7 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { SIGNOFF_PROBLEMS, type SignoffProblem } from "./signoff-problems";
 import {
   isUnchangedRecommendation,
   modifiedTargetViolations,
@@ -1194,20 +1195,11 @@ export async function appendScenarioSet(input: {
   });
   if (error) throw error;
 }
-/** A sign-off the user can correct; its message is safe to show. */
-/** Fixed messages for sign-off problems the user can correct. */
-export const SIGNOFF_PROBLEMS = {
-  "invalid-input":
-    "Kies een actie en licht je keuze toe in minstens 10 tekens.",
-  "not-found": "Deze aanbeveling bestaat niet (meer).",
-  "not-available":
-    "Alleen een beschikbare aanbeveling kan worden goedgekeurd of aangepast.",
-  "invalid-json": "Aanpassen vereist geldige bandbreedtes.",
-  "no-changes": "Pas minstens één bandbreedte aan, of kies Akkoord.",
-  "cash-floor": "De aangepaste bandbreedtes laten te weinig cash over.",
-  mandate: "De aangepaste bandbreedtes passen niet binnen je mandaat.",
-} as const;
-export type SignoffProblem = keyof typeof SIGNOFF_PROBLEMS;
+export {
+  SIGNOFF_PROBLEMS,
+  signoffProblemMessage,
+  type SignoffProblem,
+} from "./signoff-problems";
 /** A sign-off the user can correct; carries a code, never free text. */
 export class SignoffError extends Error {
   constructor(readonly code: SignoffProblem) {
