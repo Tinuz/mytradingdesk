@@ -12,14 +12,14 @@ export type LiquidityRegime = (typeof LIQUIDITY_REGIMES)[number];
 export type MacroLiquidityRegime = LiquidityRegime;
 export type CryptoCreditLiquidityRegime = LiquidityRegime;
 
-/** @deprecated V2 replay only. New calculations use MacroLiquidityRegime. */
+/** @deprecated Vocabulary of stored v2 snapshots; v3 uses MacroLiquidityRegime. */
 export type MacroRegime =
   | "STRONGLY_RESTRICTIVE"
   | "RESTRICTIVE"
   | "NEUTRAL"
   | "SUPPORTIVE"
   | "STRONGLY_SUPPORTIVE";
-/** @deprecated V2 replay only. New calculations use CryptoCreditLiquidityRegime. */
+/** @deprecated Vocabulary of stored v2 snapshots; v3 uses CryptoCreditLiquidityRegime. */
 export type CryptoLiquidityRegime = LiquidityRegime;
 
 export const MARKET_STRUCTURE_REGIMES = [

@@ -24,7 +24,7 @@ Use `npm run backfill:phase3` to obtain the 300-day BTC, ETH and real-yield hist
 
 ## Phase 4 engine operation
 
-A decision engine version is immutable once snapshots reference it. Evaluation jobs must load the most recent decision snapshot as transition memory, evaluate the current regimes, then persist all three referenced regime snapshots and the decision snapshot in one transaction. Retry safety is enforced by asset, calculation timestamp and engine version. Historical replay must use separate memory per asset and must never invoke notifications.
+A decision engine version is immutable once snapshots reference it. Evaluation jobs must load the most recent decision snapshot as transition memory, evaluate the current regimes and persist a decision snapshot that references all four source regime snapshots. Regime and decision snapshots are written in separate stages. Retry safety is enforced by asset, calculation timestamp and engine version. Historical replay must use separate memory per asset and must never invoke notifications.
 
 For rollback, deactivate the current engine version and activate a previously reviewed version through a new forward migration. Do not rewrite historical snapshots or edit an applied migration.
 
