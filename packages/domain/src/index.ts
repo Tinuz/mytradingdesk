@@ -176,3 +176,4 @@ export const RECOMMENDATION_OUTCOME_VERSION =
   "recommendation-outcome-v2" as const;
 
 export * from "./portfolio";
+export * from "./targets";

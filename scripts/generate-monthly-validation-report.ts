@@ -61,6 +61,7 @@ for (const user of await listAllUsers(db)) {
       )
       .eq("allocation_recommendations.user_id", user.id)
       .eq("calculation_version", RECOMMENDATION_OUTCOME_VERSION)
+      .eq("outcome_status", "OBSERVED")
       .gte("observed_at", start.toISOString())
       .lt("observed_at", end.toISOString()),
   ]);

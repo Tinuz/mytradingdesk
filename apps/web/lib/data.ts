@@ -3,8 +3,11 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
+  modifiedTargetViolations,
   parsePortfolioCsv,
   RECOMMENDATION_OUTCOME_VERSION,
+  type ModifiedRanges,
+  type TargetRanges,
 } from "@cmip/domain";
 
 export interface Factor {
@@ -1186,67 +1189,57 @@ export async function signoffRecommendation(input: {
   const { data: r } = await client!
     .from("allocation_recommendations")
     .select(
-      "id,mandate_id,target_ranges,investor_mandates(minimum_cash_percent,maximum_asset_weight_percent,allowed_assets)",
+      "id,status,mandate_id,target_ranges,investor_mandates(minimum_cash_percent,maximum_asset_weight_percent,allowed_assets)",
     )
     .eq("id", input.recommendationId)
     .eq("user_id", user.id)
     .maybeSingle();
   if (!r) throw new Error("Aanbeveling niet gevonden");
-  let modifiedTargets: Record<string, unknown> | null = null;
+  // A frozen or infeasible recommendation has nothing to execute.
+  if (
+    (input.action === "APPROVE" || input.action === "MODIFY") &&
+    r.status !== "AVAILABLE"
+  )
+    throw new Error(
+      "Alleen een beschikbare aanbeveling kan worden goedgekeurd of aangepast",
+    );
+  let modifiedTargets: ModifiedRanges | null = null;
   if (input.action === "MODIFY") {
+    let parsed: unknown;
     try {
-      modifiedTargets = JSON.parse(input.modifiedTargets ?? "");
+      parsed = JSON.parse(input.modifiedTargets ?? "");
     } catch {
       throw new Error("MODIFY vereist geldige target-JSON");
     }
-    const mandate = r.investor_mandates as unknown as {
-        minimum_cash_percent: number;
-        maximum_asset_weight_percent: number;
-        allowed_assets: string[];
-      },
-      changes = modifiedTargets as Record<
-        string,
-        { minimum?: number; maximum?: number }
-      >,
-      allowed = new Set(["BTC", "ETH"]),
-      entries = Object.entries(changes);
-    if (
-      !entries.length ||
-      entries.some(
-        ([asset, x]) =>
-          !allowed.has(asset) ||
-          !mandate.allowed_assets.includes(asset) ||
-          !Number.isFinite(Number(x.minimum)) ||
-          !Number.isFinite(Number(x.maximum)) ||
-          Number(x.minimum) < 0 ||
-          Number(x.maximum) < Number(x.minimum) ||
-          Number(x.maximum) > Number(mandate.maximum_asset_weight_percent),
-      )
-    )
-      throw new Error("Gewijzigde ranges overtreden het mandaat");
-    const original = r.target_ranges as Record<
-        string,
-        { minimum: number; maximum: number; midpoint: number }
-      >,
-      merged = Object.fromEntries(
-        Object.entries(original)
-          .filter(([asset]) => asset !== "CASH")
-          .map(([asset, range]) => [asset, changes[asset] ?? range]),
-      ) as Record<string, { minimum?: number; maximum?: number }>;
-    const riskyMinimum = Object.values(merged).reduce(
-        (sum, range) => sum + Number(range.minimum),
-        0,
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("MODIFY vereist geldige target-JSON");
+    // Store only the fields execution reads; a supplied midpoint is ignored.
+    modifiedTargets = Object.fromEntries(
+      Object.entries(parsed as Record<string, Record<string, unknown>>).map(
+        ([asset, range]) => [
+          asset,
+          { minimum: Number(range?.minimum), maximum: Number(range?.maximum) },
+        ],
       ),
-      riskyMidpoint = Object.values(merged).reduce(
-        (sum, range) =>
-          sum + (Number(range.minimum) + Number(range.maximum)) / 2,
-        0,
-      );
-    if (
-      riskyMinimum > 100 - Number(mandate.minimum_cash_percent) ||
-      riskyMidpoint > 100 - Number(mandate.minimum_cash_percent)
-    )
+    );
+    const mandate = r.investor_mandates as unknown as {
+      minimum_cash_percent: number;
+      maximum_asset_weight_percent: number;
+      allowed_assets: string[];
+    };
+    const violations = modifiedTargetViolations(
+      r.target_ranges as TargetRanges,
+      modifiedTargets,
+      {
+        minimumCashPercent: Number(mandate.minimum_cash_percent),
+        maximumAssetWeightPercent: Number(mandate.maximum_asset_weight_percent),
+        allowedAssets: mandate.allowed_assets,
+      },
+    );
+    if (violations.includes("CASH_FLOOR"))
       throw new Error("Gewijzigde ranges overtreden de cashvloer");
+    if (violations.length)
+      throw new Error("Gewijzigde ranges overtreden het mandaat");
   }
   const { error } = await client!.from("analyst_signoffs").insert({
     user_id: user.id,
@@ -1700,6 +1693,7 @@ export async function validationLearningWorkspace() {
         "*,allocation_recommendations(calculated_at,status,analyst_signoffs(action))",
       )
       .eq("calculation_version", RECOMMENDATION_OUTCOME_VERSION)
+      .eq("outcome_status", "OBSERVED")
       .order("observed_at", { ascending: false })
       .limit(500),
     client

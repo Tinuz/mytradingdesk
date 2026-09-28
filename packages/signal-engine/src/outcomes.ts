@@ -1,7 +1,8 @@
 export { RECOMMENDATION_OUTCOME_VERSION } from "@cmip/domain";
 export const OUTCOME_HORIZON_DAYS = [1, 7, 30, 90, 180] as const;
 /** How long after the horizon a first price may arrive and still count. */
-const END_TOLERANCE_MS = 2 * 86_400_000;
+export const OUTCOME_EXIT_TOLERANCE_DAYS = 2;
+const END_TOLERANCE_MS = OUTCOME_EXIT_TOLERANCE_DAYS * 86_400_000;
 
 export interface ObservedPrice {
   id: string;

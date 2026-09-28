@@ -1,4 +1,4 @@
-import type { AssetSymbol } from "@cmip/domain";
+import type { AssetSymbol, TargetRanges } from "@cmip/domain";
 
 /**
  * Deterministic paper-portfolio mechanics. Everything here is a pure function
@@ -53,47 +53,6 @@ export function trailingDailyAverage(
 ): number | null {
   if (days <= 0 || closes.length < days) return null;
   return closes.slice(-days).reduce((sum, x) => sum + x.value, 0) / days;
-}
-
-export interface TargetRange {
-  minimum: number;
-  maximum: number;
-  midpoint: number;
-}
-export type TargetRanges = Record<string, TargetRange>;
-export type ModifiedTargets = Record<
-  string,
-  { minimum: number; maximum: number; midpoint?: number }
->;
-
-/**
- * Applies a human MODIFY decision to the model's target ranges. The cash
- * target is derived from the resulting asset midpoints so that a modified
- * allocation is not silently throttled by the model's original cash target.
- */
-export function resolveExecutionTargets(
-  original: TargetRanges,
-  modified: ModifiedTargets | null,
-): TargetRanges {
-  const assets: TargetRanges = {};
-  for (const asset of PAPER_ASSETS) {
-    const base = original[asset];
-    const change = modified?.[asset];
-    if (change)
-      assets[asset] = {
-        minimum: Number(change.minimum),
-        maximum: Number(change.maximum),
-        midpoint:
-          change.midpoint ??
-          (Number(change.minimum) + Number(change.maximum)) / 2,
-      };
-    else if (base) assets[asset] = base;
-  }
-  if (!modified)
-    return { ...assets, ...(original.CASH ? { CASH: original.CASH } : {}) };
-  const risky = Object.values(assets).reduce((sum, x) => sum + x.midpoint, 0);
-  const cash = Math.max(0, 100 - risky);
-  return { ...assets, CASH: { minimum: cash, maximum: cash, midpoint: cash } };
 }
 
 export interface PaperBook {
@@ -196,6 +155,30 @@ export function planPaperTrades(input: {
     });
   }
   return { book: { cash, positions }, trades, skipped };
+}
+
+/**
+ * Applies trades already recorded for this valuation, so a rerun after an
+ * interrupted run values the same book instead of silently dropping them.
+ */
+export function applyRecordedTrades(
+  book: PaperBook,
+  trades: ReadonlyArray<
+    Pick<
+      PlannedTrade,
+      "asset" | "side" | "quantity" | "price" | "fee" | "slippage"
+    >
+  >,
+): PaperBook {
+  let cash = book.cash;
+  const positions = { ...book.positions };
+  for (const trade of trades) {
+    const direction = trade.side === "INCREASE" ? 1 : -1;
+    const notional = trade.quantity * trade.price;
+    positions[trade.asset] += direction * trade.quantity;
+    cash -= direction * notional + trade.fee + trade.slippage;
+  }
+  return { cash, positions };
 }
 
 /**

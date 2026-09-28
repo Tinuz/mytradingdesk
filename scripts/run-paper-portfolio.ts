@@ -1,17 +1,21 @@
 import {
+  resolveExecutionTargets,
+  type ModifiedRanges,
+  type TargetRanges,
+} from "@cmip/domain";
+import {
   PAPER_ASSETS,
   PAPER_NAV_CALCULATION_VERSION,
   DEFAULT_PAPER_COSTS,
   advanceBenchmarks,
+  applyRecordedTrades,
   benchmarkStateFromNavRow,
   bookNav,
   dailyCloses,
   planPaperTrades,
-  resolveExecutionTargets,
   trailingDailyAverage,
-  type ModifiedTargets,
   type PaperBook,
-  type TargetRanges,
+  type PlannedTrade,
 } from "@cmip/signal-engine";
 import {
   calculationTime,
@@ -33,24 +37,30 @@ async function latestValid(code: string) {
     .eq("quality_status", "VALID")
     .lte("observed_at", at.toISOString())
     .order("observed_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw error;
   return data ? { id: data.id as string, value: Number(data.value) } : null;
 }
 
-/** 200-day average of daily BTC closes (not of the last 200 observations). */
-async function btc200DayAverage() {
+/**
+ * benchmark-v1 signal: the prior complete UTC close against the 200-day
+ * average of complete daily closes (not of the last 200 observations).
+ */
+async function btc200DaySignal() {
+  const today = at.toISOString().slice(0, 10);
   const since = new Date(at.getTime() - 230 * DAY_MS).toISOString();
   const rows = await fetchAllPages((from, to) =>
     db
       .from("canonical_observations")
-      .select("value,observed_at,indicators!inner(code)")
+      .select("id,value,observed_at,indicators!inner(code)")
       .eq("indicators.code", "BTC_USD")
       .eq("quality_status", "VALID")
       .gte("observed_at", since)
-      .lte("observed_at", at.toISOString())
+      .lt("observed_at", `${today}T00:00:00Z`)
       .order("observed_at")
+      .order("id")
       .range(from, to),
   );
   const closes = dailyCloses(
@@ -59,7 +69,10 @@ async function btc200DayAverage() {
       value: Number(row.value),
     })),
   );
-  return trailingDailyAverage(closes, 200);
+  return {
+    average: trailingDailyAverage(closes, 200),
+    priorClose: closes.at(-1)?.value ?? null,
+  };
 }
 
 const [btc, eth, eurUsd, tbill, btc200] = await Promise.all([
@@ -67,7 +80,7 @@ const [btc, eth, eurUsd, tbill, btc200] = await Promise.all([
   latestValid("ETH_USD"),
   latestValid("EUR_USD"),
   latestValid("US_3M_TBILL_YIELD"),
-  btc200DayAverage(),
+  btc200DaySignal(),
 ]);
 if (!btc || !eth) throw new Error("Paper prices unavailable");
 
@@ -75,7 +88,7 @@ const out = [];
 for (const user of await listAllUsers(db)) {
   const { data: mandate, error: mandateError } = await db
     .from("investor_mandates")
-    .select("base_currency")
+    .select("base_currency,minimum_cash_percent")
     .eq("user_id", user.id)
     .lte("effective_at", at.toISOString())
     .order("effective_at", { ascending: false })
@@ -108,15 +121,6 @@ for (const user of await listAllUsers(db)) {
     paper = created.data;
   }
 
-  // EUR_USD is quoted as USD per EUR.
-  const conversion =
-    paper.base_currency === "EUR" ? (eurUsd ? 1 / eurUsd.value : 0) : 1;
-  if (!conversion) {
-    out.push({ user: user.id, status: "BLOCKED", reason: "FX_MISSING" });
-    continue;
-  }
-  const prices = { BTC: btc.value * conversion, ETH: eth.value * conversion };
-
   const { data: previous, error: previousError } = await db
     .from("paper_nav")
     .select("*")
@@ -126,6 +130,20 @@ for (const user of await listAllUsers(db)) {
     .limit(1)
     .maybeSingle();
   if (previousError) throw previousError;
+  // One valuation per calculation time, whatever version wrote it.
+  if (previous && new Date(previous.calculated_at).getTime() === at.getTime()) {
+    out.push({ user: user.id, status: "ALREADY_VALUED" });
+    continue;
+  }
+
+  // EUR_USD is quoted as USD per EUR.
+  const conversion =
+    paper.base_currency === "EUR" ? (eurUsd ? 1 / eurUsd.value : 0) : 1;
+  if (!conversion) {
+    out.push({ user: user.id, status: "BLOCKED", reason: "FX_MISSING" });
+    continue;
+  }
+  const prices = { BTC: btc.value * conversion, ETH: eth.value * conversion };
   const storedPositions = (previous?.positions ?? {}) as Record<
     string,
     unknown
@@ -157,9 +175,10 @@ for (const user of await listAllUsers(db)) {
   const { data: signoff, error: signoffError } = await db
     .from("analyst_signoffs")
     .select(
-      "id,action,modified_targets,recommendation_id,allocation_recommendations(id,status,target_ranges)",
+      "id,action,created_at,modified_targets,allocation_recommendations!inner(id,status,target_ranges,user_id)",
     )
     .eq("user_id", user.id)
+    .eq("allocation_recommendations.user_id", user.id)
     .lte("created_at", at.toISOString())
     .order("created_at", { ascending: false })
     .limit(1)
@@ -170,30 +189,50 @@ for (const user of await listAllUsers(db)) {
     status: string;
     target_ranges: TargetRanges;
   } | null;
+  // Each decision is processed exactly once: at the first valuation after it
+  // was made. Anything skipped then (e.g. blocked by a freeze) needs a new
+  // decision rather than executing later at other prices.
+  const unprocessed =
+    signoff !== null &&
+    (!previous ||
+      new Date(signoff.created_at) > new Date(previous.calculated_at));
 
-  let executed = 0;
+  let tradeCount = 0;
   let skipped: Array<{ asset: string; reason: string }> = [];
   if (
-    signoff &&
+    unprocessed &&
     approved?.status === "AVAILABLE" &&
     (signoff.action === "APPROVE" || signoff.action === "MODIFY")
   ) {
-    const { data: existing, error: existingError } = await db
+    const { data: recorded, error: recordedError } = await db
       .from("paper_trades")
-      .select("asset")
+      .select("asset,side,quantity,price,fee,slippage,executed_at")
       .eq("paper_portfolio_id", paper.id)
       .eq("recommendation_id", approved.id);
-    if (existingError) throw existingError;
+    if (recordedError) throw recordedError;
+    const recordedNow = (recorded ?? [])
+      .filter((x) => new Date(x.executed_at).getTime() === at.getTime())
+      .map((x) => ({
+        asset: x.asset as (typeof PAPER_ASSETS)[number],
+        side: x.side as PlannedTrade["side"],
+        quantity: Number(x.quantity),
+        price: Number(x.price),
+        fee: Number(x.fee),
+        slippage: Number(x.slippage),
+      }));
+    // A rerun after an interrupted run keeps the trades it already recorded.
+    book = applyRecordedTrades(book, recordedNow);
     const plan = planPaperTrades({
       book,
       prices,
       targets: resolveExecutionTargets(
         approved.target_ranges,
         signoff.action === "MODIFY"
-          ? (signoff.modified_targets as ModifiedTargets | null)
+          ? (signoff.modified_targets as ModifiedRanges | null)
           : null,
+        Number(mandate.minimum_cash_percent),
       ),
-      alreadyExecuted: new Set((existing ?? []).map((x) => String(x.asset))),
+      alreadyExecuted: new Set((recorded ?? []).map((x) => String(x.asset))),
       allowIncreases,
     });
     for (const trade of plan.trades) {
@@ -221,7 +260,7 @@ for (const user of await listAllUsers(db)) {
       if (error) throw error;
     }
     book = plan.book;
-    executed = plan.trades.length;
+    tradeCount = recordedNow.length + plan.trades.length;
     skipped = plan.skipped;
   }
 
@@ -231,8 +270,8 @@ for (const user of await listAllUsers(db)) {
     prices,
     valuedAt: at,
     annualCashRatePercent: tbill ? tbill.value : null,
-    btc200DayAverage: btc200,
-    btcPriceForSignal: btc.value,
+    btc200DayAverage: btc200.average,
+    btcPriceForSignal: btc200.priorClose ?? btc.value,
   });
   const nav = bookNav(book, prices);
   const { error } = await db.from("paper_nav").upsert(
@@ -245,14 +284,14 @@ for (const user of await listAllUsers(db)) {
       benchmark_nav: benchmarks.navs,
       attribution: {
         benchmarkState: benchmarks.state,
-        signoffId: signoff?.id ?? null,
-        executed: executed > 0,
-        trades: executed,
+        processedSignoffId: unprocessed ? signoff.id : null,
+        executed: tradeCount > 0,
+        trades: tradeCount,
         skipped,
         increasesAllowed: allowIncreases,
         feesModelBps: DEFAULT_PAPER_COSTS.feeRate * 10_000,
         slippageModelBps: DEFAULT_PAPER_COSTS.slippageRate * 10_000,
-        btc200: btc200 === null ? null : btc200 * conversion,
+        btc200: btc200.average === null ? null : btc200.average * conversion,
         btc200RiskOn: benchmarks.state.dma.riskOn,
       },
       price_observation_ids: [
@@ -273,7 +312,7 @@ for (const user of await listAllUsers(db)) {
     user: user.id,
     status: "VALUED",
     nav,
-    trades: executed,
+    trades: tradeCount,
     skipped,
     increasesAllowed: allowIncreases,
   });

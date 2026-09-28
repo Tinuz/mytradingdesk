@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { resolveExecutionTargets, type TargetRanges } from "@cmip/domain";
 import {
   advanceBenchmarks,
+  applyRecordedTrades,
   benchmarkStateFromNavRow,
   bookNav,
   dailyCloses,
   planPaperTrades,
-  resolveExecutionTargets,
   trailingDailyAverage,
-  type TargetRanges,
 } from "./paper";
 
 const at = (iso: string) => new Date(iso);
@@ -55,22 +55,6 @@ describe("daily closes", () => {
   });
 });
 
-describe("execution targets", () => {
-  it("returns the model targets unchanged without a modification", () => {
-    const original = targets(30, 20);
-    expect(resolveExecutionTargets(original, null)).toEqual(original);
-  });
-
-  it("derives the cash target from a human modification", () => {
-    const resolved = resolveExecutionTargets(targets(20, 10), {
-      BTC: { minimum: 35, maximum: 45 },
-    });
-    expect(resolved.BTC!.midpoint).toBe(40);
-    expect(resolved.ETH!.midpoint).toBe(10);
-    expect(resolved.CASH!.midpoint).toBe(50);
-  });
-});
-
 describe("paper trade planning", () => {
   const fresh = { cash: 100_000, positions: { BTC: 0, ETH: 0 } };
 
@@ -95,9 +79,11 @@ describe("paper trade planning", () => {
   });
 
   it("applies a human modification in full instead of throttling it by the old cash target", () => {
-    const resolved = resolveExecutionTargets(targets(20, 10), {
-      BTC: { minimum: 35, maximum: 45 },
-    });
+    const resolved = resolveExecutionTargets(
+      targets(20, 10),
+      { BTC: { minimum: 35, maximum: 45 } },
+      10,
+    );
     const result = planPaperTrades({
       book: fresh,
       prices,
@@ -156,6 +142,25 @@ describe("paper trade planning", () => {
       { asset: "ETH", reason: "ALREADY_EXECUTED" },
       { asset: "BTC", reason: "BELOW_MINIMUM_TRADE" },
     ]);
+  });
+});
+
+describe("recorded trades", () => {
+  it("rebuilds the book from trades an interrupted run already recorded", () => {
+    const planned = planPaperTrades({
+      book: { cash: 100_000, positions: { BTC: 0, ETH: 0 } },
+      prices,
+      targets: targets(30, 20),
+      alreadyExecuted: none,
+      allowIncreases: true,
+    });
+    const rebuilt = applyRecordedTrades(
+      { cash: 100_000, positions: { BTC: 0, ETH: 0 } },
+      planned.trades,
+    );
+    expect(rebuilt.cash).toBeCloseTo(planned.book.cash);
+    expect(rebuilt.positions.BTC).toBeCloseTo(planned.book.positions.BTC);
+    expect(rebuilt.positions.ETH).toBeCloseTo(planned.book.positions.ETH);
   });
 });
 

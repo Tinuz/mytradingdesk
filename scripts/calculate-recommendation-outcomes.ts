@@ -1,4 +1,5 @@
 import {
+  OUTCOME_EXIT_TOLERANCE_DAYS,
   OUTCOME_HORIZON_DAYS,
   RECOMMENDATION_OUTCOME_VERSION,
   recommendationOutcome,
@@ -16,6 +17,7 @@ const recommendations = await fetchAllPages((from, to) =>
     .select("id,calculated_at,target_ranges")
     .lte("calculated_at", new Date(now.getTime() - DAY_MS).toISOString())
     .order("calculated_at")
+    .order("id")
     .range(from, to),
 );
 const existing = await fetchAllPages((from, to) =>
@@ -50,6 +52,7 @@ async function validPrices(
       .gte("observed_at", since.toISOString())
       .lte("observed_at", now.toISOString())
       .order("observed_at")
+      .order("id")
       .range(from, to),
   );
   return rows.map((x) => ({
@@ -59,7 +62,21 @@ async function validPrices(
   }));
 }
 
+type OutcomeRow = {
+  recommendation_id: string;
+  horizon_days: number;
+  observed_at: string;
+  asset_returns: Record<string, number>;
+  portfolio_return_percent: number | null;
+  benchmark_return_percent: number | null;
+  adverse_excursion_percent: number | null;
+  favorable_excursion_percent: number | null;
+  outcome_status: "OBSERVED" | "UNAVAILABLE";
+  price_observation_ids: string[];
+  calculation_version: typeof RECOMMENDATION_OUTCOME_VERSION;
+};
 let written = 0;
+let awaiting = 0;
 let unavailable = 0;
 if (pending.length) {
   // One read per asset, starting a day before the oldest pending entry.
@@ -72,7 +89,7 @@ if (pending.length) {
     validPrices("BTC_USD", since),
     validPrices("ETH_USD", since),
   ]);
-  const rows = pending.flatMap(({ recommendation: r, days }) => {
+  const rows = pending.flatMap(({ recommendation: r, days }): OutcomeRow[] => {
     const targets = r.target_ranges as Record<string, { midpoint?: number }>;
     const outcome = recommendationOutcome({
       calculatedAt: new Date(r.calculated_at),
@@ -85,8 +102,29 @@ if (pending.length) {
       eth,
     });
     if (!outcome) {
+      // Record a permanent gap once no exit price can still qualify, so the
+      // outcome is not re-read every day and the gap stays visible.
+      const due = new Date(r.calculated_at).getTime() + days * DAY_MS;
+      if (due + OUTCOME_EXIT_TOLERANCE_DAYS * DAY_MS >= now.getTime()) {
+        awaiting++;
+        return [];
+      }
       unavailable++;
-      return [];
+      return [
+        {
+          recommendation_id: r.id,
+          horizon_days: days,
+          observed_at: new Date(due).toISOString(),
+          asset_returns: {},
+          portfolio_return_percent: null,
+          benchmark_return_percent: null,
+          adverse_excursion_percent: null,
+          favorable_excursion_percent: null,
+          outcome_status: "UNAVAILABLE",
+          price_observation_ids: [],
+          calculation_version: RECOMMENDATION_OUTCOME_VERSION,
+        },
+      ];
     }
     return [
       {
@@ -122,7 +160,8 @@ console.log(
       calculationVersion: RECOMMENDATION_OUTCOME_VERSION,
       pending: pending.length,
       outcomes: written,
-      awaitingPrices: unavailable,
+      awaitingPrices: awaiting,
+      unavailable,
     },
     null,
     2,
