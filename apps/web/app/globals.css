@@ -39,6 +39,8 @@ input {
   position: fixed;
   inset: 0 auto 0 0;
   width: 220px;
+  /* An open advanced section must not push the view toggle off short screens. */
+  overflow-y: auto;
   border-right: 1px solid var(--line);
   background: rgba(8, 15, 20, 0.9);
   padding: 28px 20px;
@@ -985,6 +987,7 @@ html[data-view-mode="guided"] .advanced-only {
   .sidebar {
     position: sticky;
     top: 0;
+    overflow: visible;
     inset: auto;
     width: auto;
     padding: 10px 16px 0;
@@ -995,6 +998,11 @@ html[data-view-mode="guided"] .advanced-only {
     border-right: 0;
     border-bottom: 1px solid var(--line);
     background: rgba(8, 15, 20, 0.97);
+  }
+  /* Stay sticky only while compact; with the advanced links open the header
+     would cover a third of a phone screen while scrolling. */
+  .sidebar:has(.advanced-nav[open]) {
+    position: static;
   }
   .sidebar .primary-nav {
     order: 3;
@@ -2211,7 +2219,15 @@ pre {
 h1,
 h2,
 h3 {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 @media (max-width: 900px) {
   .notification-settings {
@@ -2248,4 +2264,11 @@ h3 {
   .horizon-grid {
     grid-template-columns: 1fr 1fr;
   }
+}
+.form-error {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--red);
+  background: #231416;
+  color: #f1c4c4;
 }

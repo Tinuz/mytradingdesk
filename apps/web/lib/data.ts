@@ -3,9 +3,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import {
+  isUnchangedRecommendation,
   modifiedTargetViolations,
   parsePortfolioCsv,
-  sameTargetMidpoints,
+  type RecommendationSnapshot,
   RECOMMENDATION_OUTCOME_VERSION,
   type ModifiedRanges,
   type TargetRanges,
@@ -474,17 +475,24 @@ export async function notificationInbox() {
 export async function unreadNotificationCount() {
   const client = await database();
   if (!client) return 0;
-  let query = client
-    .from("notification_inbox")
-    .select("id", { count: "exact", head: true })
-    .is("read_at", null);
-  if (await actionableOnly(client)) query = query.or(ACTIONABLE_ALERTS);
-  const { count, error } = await query;
-  if (error) {
-    handleQueryError("notification_inbox", error);
+  // Runs on every page (navigation badge): read the setting and both counts
+  // in parallel instead of one after the other.
+  const unread = () =>
+    client
+      .from("notification_inbox")
+      .select("id", { count: "exact", head: true })
+      .is("read_at", null);
+  const [onlyActionable, all, actionable] = await Promise.all([
+    actionableOnly(client),
+    unread(),
+    unread().or(ACTIONABLE_ALERTS),
+  ]);
+  const result = onlyActionable ? actionable : all;
+  if (result.error) {
+    handleQueryError("notification_inbox", result.error);
     return 0;
   }
-  return count ?? 0;
+  return result.count ?? 0;
 }
 export async function notificationPreference() {
   const client = await database();
@@ -1186,6 +1194,8 @@ export async function appendScenarioSet(input: {
   });
   if (error) throw error;
 }
+/** A sign-off the user can correct; its message is safe to show. */
+export class SignoffError extends Error {}
 export async function signoffRecommendation(input: {
   recommendationId: string;
   action: string;
@@ -1197,7 +1207,7 @@ export async function signoffRecommendation(input: {
     user = await ownedUser(client),
     actions = new Set(["APPROVE", "MODIFY", "REJECT", "DEFER"]);
   if (!actions.has(input.action) || input.rationale.trim().length < 10)
-    throw new Error("Ongeldige sign-off");
+    throw new SignoffError("Ongeldige sign-off");
   const { data: r } = await client!
     .from("allocation_recommendations")
     .select(
@@ -1206,13 +1216,13 @@ export async function signoffRecommendation(input: {
     .eq("id", input.recommendationId)
     .eq("user_id", user.id)
     .maybeSingle();
-  if (!r) throw new Error("Aanbeveling niet gevonden");
+  if (!r) throw new SignoffError("Aanbeveling niet gevonden");
   // A frozen or infeasible recommendation has nothing to execute.
   if (
     (input.action === "APPROVE" || input.action === "MODIFY") &&
     r.status !== "AVAILABLE"
   )
-    throw new Error(
+    throw new SignoffError(
       "Alleen een beschikbare aanbeveling kan worden goedgekeurd of aangepast",
     );
   let modifiedTargets: ModifiedRanges | null = null;
@@ -1221,18 +1231,31 @@ export async function signoffRecommendation(input: {
     try {
       parsed = JSON.parse(input.modifiedTargets ?? "");
     } catch {
-      throw new Error("MODIFY vereist geldige target-JSON");
+      throw new SignoffError("MODIFY vereist geldige target-JSON");
     }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      throw new Error("MODIFY vereist geldige target-JSON");
-    // Store only the fields execution reads; a supplied midpoint is ignored.
+      throw new SignoffError("MODIFY vereist geldige target-JSON");
+    const proposed = (r.target_ranges ?? {}) as TargetRanges;
+    // Store only the fields execution reads (a supplied midpoint is ignored)
+    // and only ranges that differ from the proposal: an untouched asset keeps
+    // the model's own midpoint instead of its range middle.
     modifiedTargets = Object.fromEntries(
-      Object.entries(parsed as Record<string, Record<string, unknown>>).map(
-        ([asset, range]) => [
-          asset,
-          { minimum: Number(range?.minimum), maximum: Number(range?.maximum) },
-        ],
-      ),
+      Object.entries(parsed as Record<string, Record<string, unknown>>)
+        .map(
+          ([asset, range]) =>
+            [
+              asset,
+              {
+                minimum: Number(range?.minimum),
+                maximum: Number(range?.maximum),
+              },
+            ] as const,
+        )
+        .filter(
+          ([asset, range]) =>
+            range.minimum !== Number(proposed[asset]?.minimum) ||
+            range.maximum !== Number(proposed[asset]?.maximum),
+        ),
     );
     const mandate = r.investor_mandates as unknown as {
       minimum_cash_percent: number;
@@ -1249,11 +1272,13 @@ export async function signoffRecommendation(input: {
       },
     );
     if (violations.includes("NO_CHANGES"))
-      throw new Error("Pas minstens één bandbreedte aan of kies Akkoord");
+      throw new SignoffError(
+        "Pas minstens één bandbreedte aan of kies Akkoord",
+      );
     if (violations.includes("CASH_FLOOR"))
-      throw new Error("Gewijzigde ranges overtreden de cashvloer");
+      throw new SignoffError("Gewijzigde ranges overtreden de cashvloer");
     if (violations.length)
-      throw new Error("Gewijzigde ranges overtreden het mandaat");
+      throw new SignoffError("Gewijzigde ranges overtreden het mandaat");
   }
   const { error } = await client!.from("analyst_signoffs").insert({
     user_id: user.id,
@@ -1609,7 +1634,7 @@ export async function todayWorkspace() {
   const { data: lastDecision, error: lastDecisionError } = await client
     .from("analyst_signoffs")
     .select(
-      "id,action,rationale,created_at,recommendation_id,allocation_recommendations(status,target_ranges)",
+      "id,action,rationale,created_at,recommendation_id,allocation_recommendations(status,target_ranges,warnings,mandate_id)",
     )
     .order("created_at", { ascending: false })
     .limit(1)
@@ -1620,24 +1645,17 @@ export async function todayWorkspace() {
     lastDecision && lastDecision.recommendation_id === recommendation.data?.id
       ? lastDecision
       : null;
-  const decided = lastDecision?.allocation_recommendations as unknown as {
-    status: string;
-    target_ranges: Record<string, { midpoint?: number }>;
-  } | null;
+  const decided =
+    lastDecision?.allocation_recommendations as unknown as RecommendationSnapshot | null;
   // The daily cycle writes a fresh recommendation every day. When it proposes
-  // the same targets as the one already decided on, there is nothing new to
-  // review.
+  // exactly what was already decided on, there is nothing new to review.
   const unchangedSinceDecision = Boolean(
     recommendation.data &&
     !signoff &&
     decided &&
     // "Decide later" still asks for a decision.
     lastDecision?.action !== "DEFER" &&
-    decided.status === recommendation.data.status &&
-    sameTargetMidpoints(
-      decided.target_ranges,
-      recommendation.data.target_ranges,
-    ),
+    isUnchangedRecommendation(decided, recommendation.data),
   );
   return {
     settings: settings.data,

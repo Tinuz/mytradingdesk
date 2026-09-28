@@ -25,7 +25,7 @@ function eventSummary(event: QualityEvent) {
       ["string", "number", "boolean"].includes(typeof value),
     )
     .slice(0, 3)
-    .map(([key, value]) => `${key.replaceAll("_", " ")}: ${String(value)}`);
+    .map(([key, value]) => `${label(key)}: ${String(value)}`);
   return [indicator?.code, ...facts].filter(Boolean).join(" · ");
 }
 

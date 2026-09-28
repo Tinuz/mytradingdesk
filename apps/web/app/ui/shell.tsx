@@ -81,8 +81,9 @@ export async function Shell({
           >
             Meldingen
             {unread > 0 && (
-              <span className="nav-badge" aria-label={`${unread} ongelezen`}>
+              <span className="nav-badge">
                 {unread}
+                <span className="visually-hidden"> ongelezen</span>
               </span>
             )}
           </Link>

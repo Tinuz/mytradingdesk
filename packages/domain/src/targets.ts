@@ -105,15 +105,41 @@ export function modifiedTargetViolations(
   return violations;
 }
 
-/** Same midpoint for every asset and cash, within 0.01 percentage point. */
-export function sameTargetMidpoints(a: unknown, b: unknown): boolean {
-  const left = (a ?? {}) as Record<string, { midpoint?: number }>;
-  const right = (b ?? {}) as Record<string, { midpoint?: number }>;
+/** Same minimum, maximum and midpoint for every target; a missing target differs. */
+export function sameTargetRanges(a: unknown, b: unknown): boolean {
+  const left = (a ?? {}) as Record<string, Partial<TargetRange>>;
+  const right = (b ?? {}) as Record<string, Partial<TargetRange>>;
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  const close = (x: unknown, y: unknown) =>
+    x != null && y != null && Math.abs(Number(x) - Number(y)) < 0.01;
   return [...keys].every(
     (key) =>
-      Math.abs(
-        Number(left[key]?.midpoint ?? 0) - Number(right[key]?.midpoint ?? 0),
-      ) < 0.01,
+      close(left[key]?.minimum, right[key]?.minimum) &&
+      close(left[key]?.maximum, right[key]?.maximum) &&
+      close(left[key]?.midpoint, right[key]?.midpoint),
+  );
+}
+
+export interface RecommendationSnapshot {
+  status: string;
+  target_ranges: unknown;
+  warnings?: unknown;
+  mandate_id?: string | null;
+}
+/**
+ * Whether a new daily recommendation proposes nothing different from the one
+ * the user already decided on: same status, mandate, ranges and warnings.
+ */
+export function isUnchangedRecommendation(
+  decided: RecommendationSnapshot,
+  latest: RecommendationSnapshot,
+): boolean {
+  const warnings = (value: unknown) =>
+    JSON.stringify([...((value ?? []) as string[])].sort());
+  return (
+    decided.status === latest.status &&
+    (decided.mandate_id ?? null) === (latest.mandate_id ?? null) &&
+    warnings(decided.warnings) === warnings(latest.warnings) &&
+    sameTargetRanges(decided.target_ranges, latest.target_ranges)
   );
 }

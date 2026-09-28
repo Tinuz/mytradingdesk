@@ -1,28 +1,36 @@
 "use client";
 import Link from "next/link";
+import { useEffect } from "react";
 
 /**
- * Shown when a page or form action fails. Details stay in the server logs;
- * the digest lets an operator find the matching entry.
+ * Shown when a page fails to render. Details stay in the server logs; the
+ * digest lets an operator find the matching entry.
  */
 export default function ErrorPage({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
   return (
     <main className="error-page">
       <span className="overline">Er ging iets mis</span>
-      <h1>Deze stap kon niet worden afgerond</h1>
+      <h1>Deze pagina kon niet worden geladen</h1>
       <p>
-        Er is niets gewijzigd aan je paperportfolio. Probeer het opnieuw; blijft
-        het misgaan, controleer dan je invoer of de datakwaliteit.
+        Probeer het opnieuw. Blijft het misgaan, controleer dan op Vandaag of je
+        laatste beslissing is vastgelegd en bekijk de datakwaliteit.
       </p>
       {error.digest && <p className="muted">Referentie: {error.digest}</p>}
       <div className="error-actions">
-        <button className="primary-action" type="button" onClick={reset}>
+        <button
+          className="primary-action"
+          type="button"
+          onClick={() => retry()}
+        >
           Opnieuw proberen
         </button>
         <Link href="/today">Naar Vandaag</Link>

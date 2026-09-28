@@ -1,9 +1,11 @@
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import {
   allocationWorkspace,
   appendAssetThesis,
   appendScenarioSet,
   signoffRecommendation,
+  SignoffError,
 } from "../../lib/data";
 import { Shell } from "../ui/shell";
 import { ScenarioPreview } from "./scenario-preview";
@@ -28,8 +30,13 @@ const stateLabels: Record<string, string> = {
   ELEVATED_RISK: "verhoogd risico",
   OVERHEATED: "oververhit",
 };
-export default async function AllocationPage() {
-  const w = await allocationWorkspace();
+export default async function AllocationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ fout?: string | string[] }>;
+}) {
+  const [w, params] = await Promise.all([allocationWorkspace(), searchParams]);
+  const formError = typeof params.fout === "string" ? params.fout : null;
   async function thesis(f: FormData) {
     "use server";
     await appendAssetThesis({
@@ -65,12 +72,6 @@ export default async function AllocationPage() {
         (asset) => ["BTC", "ETH"].includes(asset),
       ),
     );
-    const proposed = (w.recommendation?.target_ranges ?? {}) as Record<
-      string,
-      { minimum: number; maximum: number }
-    >;
-    // Submit only the ranges the user actually changed: an untouched asset
-    // keeps the model's own midpoint instead of its range middle.
     const guidedTargets = Object.fromEntries(
       ["BTC", "ETH"]
         .filter((asset) => allowedAssets.has(asset))
@@ -80,23 +81,28 @@ export default async function AllocationPage() {
             minimum: Number(f.get(`${asset.toLowerCase()}_minimum`)),
             maximum: Number(f.get(`${asset.toLowerCase()}_maximum`)),
           },
-        ])
-        .filter(
-          ([asset, range]) =>
-            (range as { minimum: number }).minimum !==
-              Number(proposed[asset as string]?.minimum) ||
-            (range as { maximum: number }).maximum !==
-              Number(proposed[asset as string]?.maximum),
-        ),
+        ]),
     );
-    await signoffRecommendation({
-      recommendationId: String(f.get("recommendation_id")),
-      action: String(f.get("action")),
-      rationale: String(f.get("rationale")),
-      modifiedTargets: rawTargets || JSON.stringify(guidedTargets),
-      reviewOn: String(f.get("review_on") ?? ""),
-    });
+    let problem: string | null = null;
+    try {
+      await signoffRecommendation({
+        recommendationId: String(f.get("recommendation_id")),
+        action: String(f.get("action")),
+        rationale: String(f.get("rationale")),
+        modifiedTargets: rawTargets || JSON.stringify(guidedTargets),
+        reviewOn: String(f.get("review_on") ?? ""),
+      });
+    } catch (error) {
+      // Correctable input problems return to the form; anything else is a
+      // real failure for the error page.
+      if (!(error instanceof SignoffError)) throw error;
+      problem = error.message;
+    }
+    if (problem)
+      redirect(`/allocation?fout=${encodeURIComponent(problem)}#human-review`);
     revalidatePath("/allocation");
+    // Clears a previous error from the address after a successful sign-off.
+    redirect("/allocation");
   }
   const r = w.recommendation,
     targets = (r?.target_ranges ?? {}) as Record<
@@ -294,6 +300,11 @@ export default async function AllocationPage() {
             action={signoff}
             className={`journal-form mandate-benchmarks ${latestSignoff ? "advanced-only" : ""}`}
           >
+            {formError && (
+              <p className="form-error" role="alert">
+                {formError}
+              </p>
+            )}
             <input
               type="hidden"
               name="recommendation_id"

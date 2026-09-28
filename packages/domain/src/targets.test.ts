@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  isUnchangedRecommendation,
   modifiedTargetViolations,
-  sameTargetMidpoints,
+  sameTargetRanges,
   resolveExecutionTargets,
   type TargetRanges,
 } from "./targets";
@@ -100,11 +101,38 @@ describe("modified target validation", () => {
 });
 
 describe("unchanged recommendations", () => {
-  it("compares midpoints of every asset and cash", () => {
-    expect(sameTargetMidpoints(capped, structuredClone(capped))).toBe(true);
+  const decided = {
+    status: "AVAILABLE",
+    target_ranges: capped,
+    warnings: ["B", "A"],
+    mandate_id: "m1",
+  };
+  it("treats the same proposal as unchanged, ignoring warning order", () => {
     expect(
-      sameTargetMidpoints(capped, { ...capped, ETH: range(5, 15, 10.5) }),
+      isUnchangedRecommendation(decided, {
+        ...decided,
+        target_ranges: structuredClone(capped),
+        warnings: ["A", "B"],
+      }),
+    ).toBe(true);
+  });
+  it("detects any change a user should review", () => {
+    const changed = [
+      { status: "FROZEN" },
+      { mandate_id: "m2" },
+      { warnings: ["A", "B", "SOURCE_GATE:BTC_USD"] },
+      // Same midpoint, narrower range (e.g. a new stress cap).
+      { target_ranges: { ...capped, BTC: range(42, 45, 45) } },
+      { target_ranges: { BTC: capped.BTC, ETH: capped.ETH } },
+    ];
+    for (const change of changed)
+      expect(
+        isUnchangedRecommendation(decided, { ...decided, ...change }),
+      ).toBe(false);
+  });
+  it("never matches a missing target against a present one", () => {
+    expect(
+      sameTargetRanges({ BTC: capped.BTC }, { BTC: capped.BTC, ETH: {} }),
     ).toBe(false);
-    expect(sameTargetMidpoints(capped, { BTC: capped.BTC })).toBe(false);
   });
 });

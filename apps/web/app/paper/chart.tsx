@@ -10,6 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { axisDigits } from "./axis";
 
 type NavRow = {
   calculated_at: string;
@@ -36,10 +37,10 @@ const day = new Intl.DateTimeFormat("nl-NL", {
   day: "numeric",
   month: "short",
 });
-const percent = (value: number) =>
+const percent = (value: number, digits = 1) =>
   `${value > 0 ? "+" : ""}${value.toLocaleString("nl-NL", {
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 1,
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
   })}%`;
 
 /**
@@ -73,6 +74,13 @@ export function PaperChart({
     ),
   })) as Array<Record<string, string | number | null>>;
   const latest = data.at(-1)!;
+  const digits = axisDigits(
+    data.flatMap((row) =>
+      SERIES.map((s) => row[s.key]).filter(
+        (value): value is number => typeof value === "number",
+      ),
+    ),
+  );
   return (
     <figure className="paper-chart-figure">
       <ResponsiveContainer width="100%" height={300}>
@@ -89,7 +97,7 @@ export function PaperChart({
             minTickGap={24}
           />
           <YAxis
-            tickFormatter={(value: number) => percent(value)}
+            tickFormatter={(value: number) => percent(value, digits)}
             stroke="#52606c"
             tick={{ fill: "#8e9ba6", fontSize: 12 }}
             width={64}
@@ -107,7 +115,7 @@ export function PaperChart({
                 dateStyle: "medium",
               })
             }
-            formatter={(value, name) => [percent(Number(value)), name]}
+            formatter={(value, name) => [percent(Number(value), 2), name]}
             itemStyle={{ color: "#e8edf2" }}
             separator=": "
             itemSorter={(item) =>
@@ -120,7 +128,7 @@ export function PaperChart({
               SERIES.findIndex((series) => series.key === item.dataKey)
             }
           />
-          {SERIES.map((series) => (
+          {[...SERIES.slice(1), SERIES[0]].map((series) => (
             <Line
               key={series.key}
               dataKey={series.key}
@@ -145,7 +153,7 @@ export function PaperChart({
           <thead>
             <tr>
               <th scope="col">Reeks</th>
-              <th scope="col">Rendement sinds start</th>
+              <th scope="col">Rendement sinds start (laatste waardering)</th>
             </tr>
           </thead>
           <tbody>
@@ -155,7 +163,7 @@ export function PaperChart({
                 <td>
                   {latest[series.key] == null
                     ? "—"
-                    : percent(Number(latest[series.key]))}
+                    : percent(Number(latest[series.key]), 2)}
                 </td>
               </tr>
             ))}

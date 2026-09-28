@@ -36,16 +36,22 @@ const LABELS: Record<string, string> = {
   QUARANTINED: "In quarantaine",
   // Allocation warnings and constraints
   SOURCE_GATE: "Bron niet goedgekeurd",
-  SOURCE_NOT_APPROVED: "bron niet goedgekeurd",
-  FREEZE_ACTIVE: "blokkade actief",
+  SOURCE_NOT_APPROVED: "Bron niet goedgekeurd",
+  FREEZE_ACTIVE: "Blokkade actief",
   OPERATIONAL_FREEZE: "Operationele blokkade",
   METHODOLOGY_VERSION_NOT_ACTIVE: "Methodologie niet actief",
-  NO_ACTIVE_THESIS: "geen actieve thesis",
-  NOT_ALLOWED: "niet toegestaan in mandaat",
-  STRESS_CAP: "begrensd door marktstress",
-  ASSET_CAP: "maximum per asset bereikt",
+  NO_ACTIVE_THESIS: "Geen actieve thesis",
+  NOT_ALLOWED: "Niet toegestaan in mandaat",
+  STRESS_CAP: "Begrensd door marktstress",
+  ASSET_CAP: "Maximum per asset bereikt",
   TOTAL_RISK_CAP: "Totaal risicomaximum bereikt",
   INVALID_MANDATE: "Ongeldig mandaat",
+  // Data-quality event details
+  from: "van",
+  to: "tot",
+  expected_seconds: "verwacht interval (s)",
+  provider: "bron",
+  reason: "reden",
 };
 
 const fallback = (code: string) => code.replaceAll("_", " ").toLowerCase();
@@ -66,5 +72,6 @@ export function warningLabel(warning: string): string {
   const [first, ...rest] = parts;
   const tail = rest.join(":");
   if (LABELS[first!]) return `${LABELS[first!]}: ${tail}`;
-  return `${first}: ${LABELS[tail] ?? fallback(tail)}`;
+  const detail = LABELS[tail] ?? fallback(tail);
+  return `${first}: ${detail.charAt(0).toLowerCase()}${detail.slice(1)}`;
 }
